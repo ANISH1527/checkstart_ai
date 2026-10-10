@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     def SECRET_KEY(self) -> str:
         return self.JWT_SECRET_KEY
 
+    @property
+    def ALGORITHM(self) -> str:
+        return self.JWT_ALGORITHM
+
     @computed_field
     @property
     def is_production(self) -> bool:

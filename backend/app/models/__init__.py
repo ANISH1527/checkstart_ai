@@ -9,6 +9,8 @@ from app.models.recommendation import Recommendation
 from app.models.embedding import Embedding
 from app.models.audit_log import AuditLog
 from app.models.pipeline_job import PipelineJob
+from app.models.chat import ValidationSession, ConversationMessage
+from app.models.profile import UserProfile, UserPreference
 
 __all__ = [
     "Base",
@@ -22,4 +24,8 @@ __all__ = [
     "Embedding",
     "AuditLog",
     "PipelineJob",
+    "ValidationSession",
+    "ConversationMessage",
+    "UserProfile",
+    "UserPreference",
 ]

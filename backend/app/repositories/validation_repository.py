@@ -24,7 +24,16 @@ class ValidationRepository:
         overall_score: float,
         confidence_score: float,
         classification: str,
-        pipeline_timing: Optional[dict] = None
+        pipeline_timing: Optional[dict] = None,
+        session_id: Optional[str] = None,
+        framework_version: str = "v1.0",
+        generation_mode: str = "ai_standard",
+        degraded: bool = False,
+        inputs_changed: Optional[dict] = None,
+        summary: Optional[str] = None,
+        strategic_verdict: Optional[str] = None,
+        recommended_action: Optional[str] = None,
+        analysis_json: Optional[dict] = None,
     ) -> ValidationResult:
         val_result = ValidationResult(
             idea_id=idea_id,
@@ -36,12 +45,24 @@ class ValidationRepository:
             overall_score=overall_score,
             confidence_score=confidence_score,
             classification=classification,
-            pipeline_timing=pipeline_timing
+            pipeline_timing=pipeline_timing,
+            session_id=session_id,
+            framework_version=framework_version,
+            generation_mode=generation_mode,
+            degraded=degraded,
+            inputs_changed=inputs_changed,
+            summary=summary,
+            strategic_verdict=strategic_verdict,
+            recommended_action=recommended_action,
+            analysis_json=analysis_json,
         )
         self.db.add(val_result)
         self.db.commit()
         self.db.refresh(val_result)
         return val_result
+
+    def get_by_id(self, validation_id: int) -> Optional[ValidationResult]:
+        return self.db.query(ValidationResult).filter(ValidationResult.id == validation_id).first()
 
     def save_scores(self, validation_id: int, scores: List[dict]):
         for item in scores:

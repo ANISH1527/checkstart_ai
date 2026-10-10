@@ -33,10 +33,20 @@ class GeminiProvider(LLMProvider):
             logger.warning(f"GeminiProvider health check failed: {e}")
             return False
 
+    def _fallback_result(self, idea_data: Dict[str, Any], prompt_version: str) -> Dict[str, Any]:
+        res = MockProvider().generate_validation_analysis(idea_data, prompt_version)
+        res["generation_mode"] = "heuristic_fallback"
+        res["degraded"] = True
+        limitations = res.get("limitations", [])
+        if "Report generated using heuristic fallback model because Gemini AI was unavailable." not in limitations:
+            limitations.append("Report generated using heuristic fallback model because Gemini AI was unavailable.")
+        res["limitations"] = limitations
+        return res
+
     def generate_validation_analysis(self, idea_data: Dict[str, Any], prompt_version: str = "v1.2") -> Dict[str, Any]:
         if not self.health_check():
             struct_logger.warning("llm_fallback_triggered", event="llm_fallback_triggered", reason="Gemini health check failed or API key invalid", idea_id=idea_data.get("id"))
-            return MockProvider().generate_validation_analysis(idea_data, prompt_version)
+            return self._fallback_result(idea_data, prompt_version)
 
         try:
             import google.generativeai as genai
@@ -60,11 +70,13 @@ class GeminiProvider(LLMProvider):
             response = model.generate_content(formatted_prompt)
             parsed = parse_llm_json(response.text)
             if parsed and "market_demand" in parsed:
+                parsed["generation_mode"] = "ai_standard"
+                parsed["degraded"] = False
                 return parsed
 
             struct_logger.warning("llm_fallback_triggered", event="llm_fallback_triggered", reason="Failed to parse Gemini JSON response", idea_id=idea_data.get("id"))
-            return MockProvider().generate_validation_analysis(idea_data, prompt_version)
+            return self._fallback_result(idea_data, prompt_version)
 
         except Exception as e:
             struct_logger.warning("llm_fallback_triggered", event="llm_fallback_triggered", reason=str(e), idea_id=idea_data.get("id"))
-            return MockProvider().generate_validation_analysis(idea_data, prompt_version)
+            return self._fallback_result(idea_data, prompt_version)

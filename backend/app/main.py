@@ -118,9 +118,11 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     msg = exc.detail if isinstance(exc.detail, str) else "Request error"
     
     if exc.status_code == 401:
-        msg = "Invalid or expired token"
+        if not msg or msg.lower() in ("unauthorized", "could not validate credentials", "not authenticated"):
+            msg = "Invalid or expired token"
     elif exc.status_code == 403:
-        msg = "Insufficient permissions"
+        if not msg or msg.lower() in ("forbidden", ""):
+            msg = "Insufficient permissions"
     elif exc.status_code == 404 and (msg == "Not Found" or not msg):
         msg = "Resource not found"
 
@@ -216,12 +218,38 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 
-# Include Routers with API Version Prefix
-api_prefix = settings.API_V1_STR
-app.include_router(auth.router, prefix=api_prefix)
-app.include_router(users.router, prefix=api_prefix)
-app.include_router(ideas.router, prefix=api_prefix)
-app.include_router(validation.router, prefix=api_prefix)
-app.include_router(history.router, prefix=api_prefix)
-app.include_router(reports.router, prefix=api_prefix)
-app.include_router(admin.router, prefix=api_prefix)
+# Import API Routers
+from app.api import (
+    auth,
+    users,
+    ideas,
+    validation,
+    history,
+    reports,
+    admin,
+    sessions,
+    dashboard,
+    comparisons,
+    profile_settings
+)
+
+# Include Routers with API Version Prefix (/api/v1) and legacy/frontend proxy prefix (/api)
+all_routers = [
+    auth.router,
+    users.router,
+    ideas.router,
+    validation.router,
+    history.router,
+    reports.router,
+    admin.router,
+    sessions.router,
+    dashboard.router,
+    comparisons.router,
+    profile_settings.router
+]
+
+for r in all_routers:
+    app.include_router(r, prefix=settings.API_V1_STR)
+    if settings.API_V1_STR != "/api":
+        app.include_router(r, prefix="/api")
+

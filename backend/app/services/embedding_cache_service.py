@@ -10,17 +10,34 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddingCacheService:
+    _redis_available: Optional[bool] = None
+    _memory_cache: dict = {}
+    _memory_counters: dict = {}
+
     def __init__(self, redis_url: Optional[str] = None):
         self.redis_url = redis_url or getattr(settings, "REDIS_URL", "redis://localhost:6379/0")
         self._redis_client = None
 
     @property
     def client(self) -> Optional[redis.Redis]:
+        if EmbeddingCacheService._redis_available is False:
+            return None
         if self._redis_client is None and self.redis_url:
             try:
-                self._redis_client = redis.Redis.from_url(self.redis_url, decode_responses=True, socket_timeout=1.0)
+                self._redis_client = redis.Redis.from_url(
+                    self.redis_url,
+                    decode_responses=True,
+                    socket_connect_timeout=0.2,
+                    socket_timeout=0.2
+                )
+                # Quick ping to verify connectivity
+                self._redis_client.ping()
+                EmbeddingCacheService._redis_available = True
             except Exception as e:
-                logger.warning(f"Failed to initialize Redis client: {e}")
+                if EmbeddingCacheService._redis_available is not False:
+                    logger.info(f"Redis unavailable ({e}), using in-memory cache fallback.")
+                EmbeddingCacheService._redis_available = False
+                self._redis_client = None
                 return None
         return self._redis_client
 
@@ -32,71 +49,76 @@ class EmbeddingCacheService:
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
     def get(self, text: str) -> Optional[List[float]]:
+        key = self.cache_key(text, "emb:")
         try:
             cli = self.client
-            if not cli:
-                return None
-            key = self.cache_key(text, "emb:")
-            data = cli.get(key)
-            if data:
-                return json.loads(data)
+            if cli:
+                data = cli.get(key)
+                if data:
+                    return json.loads(data)
         except Exception as e:
-            logger.warning(f"Redis get failed for embedding cache: {e}")
-            return None
-        return None
+            EmbeddingCacheService._redis_available = False
+            logger.debug(f"Redis get failed: {e}")
+        return self._memory_cache.get(key)
 
     def set(self, text: str, embedding: List[float], ttl_seconds: int = 86400) -> None:
+        key = self.cache_key(text, "emb:")
+        self._memory_cache[key] = embedding
         try:
             cli = self.client
-            if not cli:
-                return
-            key = self.cache_key(text, "emb:")
-            cli.set(key, json.dumps(embedding), ex=ttl_seconds)
+            if cli:
+                cli.set(key, json.dumps(embedding), ex=ttl_seconds)
         except Exception as e:
-            logger.warning(f"Redis set failed for embedding cache: {e}")
+            EmbeddingCacheService._redis_available = False
+            logger.debug(f"Redis set failed: {e}")
 
     def get_similarity_cache(self, text: str) -> Optional[Any]:
+        key = self.cache_key(text, "sim:")
         try:
             cli = self.client
-            if not cli:
-                return None
-            key = self.cache_key(text, "sim:")
-            data = cli.get(key)
-            if data:
-                return json.loads(data)
+            if cli:
+                data = cli.get(key)
+                if data:
+                    return json.loads(data)
         except Exception as e:
-            logger.warning(f"Redis get failed for similarity cache: {e}")
-            return None
-        return None
+            EmbeddingCacheService._redis_available = False
+            logger.debug(f"Redis similarity get failed: {e}")
+        return self._memory_cache.get(key)
 
     def set_similarity_cache(self, text: str, results: Any, ttl_seconds: int = 3600) -> None:
+        key = self.cache_key(text, "sim:")
+        self._memory_cache[key] = results
         try:
             cli = self.client
-            if not cli:
-                return
-            key = self.cache_key(text, "sim:")
-            cli.set(key, json.dumps(results), ex=ttl_seconds)
+            if cli:
+                cli.set(key, json.dumps(results), ex=ttl_seconds)
         except Exception as e:
-            logger.warning(f"Redis set failed for similarity cache: {e}")
+            EmbeddingCacheService._redis_available = False
+            logger.debug(f"Redis similarity set failed: {e}")
 
     def incr_counter(self, name: str) -> None:
+        self._memory_counters[name] = self._memory_counters.get(name, 0) + 1
         try:
             cli = self.client
             if cli:
                 cli.incr(name)
         except Exception as e:
-            logger.warning(f"Redis INCR failed for {name}: {e}")
+            EmbeddingCacheService._redis_available = False
+            logger.debug(f"Redis incr failed: {e}")
 
     def get_cache_stats(self) -> dict:
         try:
             cli = self.client
-            if not cli:
-                return {"embedding_hit_rate": "0%", "similarity_hit_rate": "0%"}
-            
-            emb_hits = int(cli.get("stats:emb:hits") or 0)
-            emb_misses = int(cli.get("stats:emb:misses") or 0)
-            sim_hits = int(cli.get("stats:sim:hits") or 0)
-            sim_misses = int(cli.get("stats:sim:misses") or 0)
+            if cli:
+                emb_hits = int(cli.get("stats:emb:hits") or 0)
+                emb_misses = int(cli.get("stats:emb:misses") or 0)
+                sim_hits = int(cli.get("stats:sim:hits") or 0)
+                sim_misses = int(cli.get("stats:sim:misses") or 0)
+            else:
+                emb_hits = self._memory_counters.get("stats:emb:hits", 0)
+                emb_misses = self._memory_counters.get("stats:emb:misses", 0)
+                sim_hits = self._memory_counters.get("stats:sim:hits", 0)
+                sim_misses = self._memory_counters.get("stats:sim:misses", 0)
 
             emb_total = emb_hits + emb_misses
             sim_total = sim_hits + sim_misses
@@ -109,5 +131,5 @@ class EmbeddingCacheService:
                 "similarity_hit_rate": sim_rate
             }
         except Exception as e:
-            logger.warning(f"Failed to fetch cache stats from Redis: {e}")
+            logger.debug(f"Failed to fetch cache stats: {e}")
             return {"embedding_hit_rate": "0%", "similarity_hit_rate": "0%"}

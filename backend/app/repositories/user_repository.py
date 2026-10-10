@@ -15,6 +15,16 @@ class UserRepository:
     def get_by_email(self, email: str) -> Optional[User]:
         return self.db.query(User).filter(User.email == email).first()
 
+    def get_by_email_or_name(self, identifier: str) -> Optional[User]:
+        from sqlalchemy import or_, func
+        cleaned = identifier.strip().lower()
+        return self.db.query(User).filter(
+            or_(
+                func.lower(User.email) == cleaned,
+                func.lower(User.name) == cleaned
+            )
+        ).first()
+
     def create(self, user_in: UserRegister) -> User:
         db_user = User(
             name=user_in.name,

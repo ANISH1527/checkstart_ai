@@ -61,3 +61,48 @@ def test_out_of_range_score_is_clipped():
     assert extracted_scores["market_demand"] == 100.0
     assert overall_score == 100.0
 
+
+def test_aggregate_to_7_parameters():
+    extracted = {
+        "market_demand": 85.0,
+        "problem_solution_fit": 90.0,
+        "competition": 70.0,
+        "target_customer_clarity": 80.0,
+        "uniqueness": 75.0,
+        "technical_feasibility": 95.0,
+        "business_potential": 88.0,
+        "scalability": 60.0,
+        "risk": 30.0
+    }
+    seven = ScoringService.aggregate_to_7_parameters(extracted)
+    assert seven["marketDemand"] == 8.5
+    assert seven["problemSeverity"] == 9.0
+    assert seven["competition"] == 7.0
+    assert seven["targetCustomer"] == 8.0
+    assert seven["innovation"] == 7.5
+    assert seven["feasibility"] == 9.5
+    assert seven["revenuePotential"] == 8.8
+
+
+def test_classify_all_bands():
+    exceptional = ScoringService.classify(92.5)
+    assert exceptional["code"] == "EXCEPTIONAL"
+    assert exceptional["label"] == "Highly Promising"
+
+    strong = ScoringService.classify(78.0)
+    assert strong["code"] == "STRONG"
+    assert strong["label"] == "Promising"
+
+    moderate = ScoringService.classify(65.0)
+    assert moderate["code"] == "MODERATE"
+    assert moderate["label"] == "Moderate"
+
+    weak = ScoringService.classify(45.0)
+    assert weak["code"] == "WEAK"
+    assert weak["label"] == "Needs Improvement"
+
+    very_weak = ScoringService.classify(25.0)
+    assert very_weak["code"] == "VERY_WEAK"
+    assert very_weak["label"] == "High Risk"
+
+

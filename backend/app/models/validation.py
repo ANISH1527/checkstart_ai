@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, DateTime, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database.base import Base
 
@@ -21,9 +21,19 @@ class ValidationResult(Base):
     confidence_score = Column(Float, nullable=False)
     classification = Column(String(50), nullable=False)
     pipeline_timing = Column(JSON, nullable=True)
+    session_id = Column(String(64), ForeignKey("validation_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    framework_version = Column(String(20), default="v1.0", nullable=False)
+    generation_mode = Column(String(30), default="ai_standard", nullable=False)
+    degraded = Column(Boolean, default=False, nullable=False)
+    inputs_changed = Column(JSON, nullable=True)
+    summary = Column(Text, nullable=True)
+    strategic_verdict = Column(Text, nullable=True)
+    recommended_action = Column(Text, nullable=True)
+    analysis_json = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     idea = relationship("Idea", back_populates="validations")
+    session = relationship("ValidationSession", back_populates="validations")
     scores = relationship("ValidationScore", back_populates="validation", cascade="all, delete-orphan")
     evidence = relationship("Evidence", back_populates="validation", cascade="all, delete-orphan")
     competitors = relationship("Competitor", back_populates="validation", cascade="all, delete-orphan")

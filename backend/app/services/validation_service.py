@@ -1,6 +1,6 @@
 import json
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models.idea import Idea
@@ -39,7 +39,9 @@ class ValidationService:
         self.gap_service = InformationGapService()
         self.rec_service = RecommendationService()
 
-    def run_validation_pipeline(self, idea: Idea) -> Dict[str, Any]:
+    def run_validation_pipeline(self, idea: Idea, session_id: Optional[str] = None) -> Dict[str, Any]:
+        from app.services.scoring_service import FRAMEWORK_VERSION
+
         pipeline_timing: Dict[str, float] = {}
 
         idea_dict = {
@@ -58,6 +60,13 @@ class ValidationService:
 
         raw_input_str = json.dumps(idea_dict, sort_keys=True)
         input_hash = compute_sha256(raw_input_str)
+
+        # Detect inputs changed compared to previous version
+        latest_val = self.val_repo.get_latest_validation(idea.id)
+        next_version = (latest_val.version + 1) if latest_val else 1
+        inputs_changed = None
+        if latest_val and latest_val.input_hash != input_hash:
+            inputs_changed = {"previous_hash": latest_val.input_hash, "current_hash": input_hash}
 
         def time_layer(layer_num: int, layer_name: str, fn, *args, **kwargs):
             t0 = time.perf_counter()
@@ -146,10 +155,53 @@ class ValidationService:
 
         recommendations = [r.dict() for r in prioritized_recs]
 
+        # Extract Summary & Verdict
+        summary = (
+            llm_analysis.get("summary")
+            or f"{idea.title} addresses {idea.industry or 'the market'} with an estimated feasibility score of {overall_score}%."
+        )
+        strategic_verdict = (
+            llm_analysis.get("final_verdict")
+            or llm_analysis.get("finalVerdict")
+            or summary
+        )
+        recommended_action = (
+            top_3_summary[0].action if top_3_summary else (
+                prioritized_recs[0].action if prioritized_recs else "Execute primary validation experiments."
+            )
+        )
+
+        analysis_json = {
+            "strengths": llm_analysis.get("strengths", ["Clear target problem identified"]),
+            "weaknesses": llm_analysis.get("weaknesses", ["Customer acquisition channels require empirical testing"]),
+            "risks": [
+                {"risk": r, "severity": "Medium", "mitigation": "Conduct prototype user testing"}
+                if isinstance(r, str) else r
+                for r in llm_analysis.get("risks", ["Competition from established alternatives"])
+            ],
+            "marketAnalysis": llm_analysis.get("market_analysis") or "Addressable market analysis indicates viable niche entry points.",
+            "competitionAnalysis": llm_analysis.get("competition_analysis") or "Competitive landscape shows established alternatives requiring clear differentiation.",
+            "targetCustomerAnalysis": llm_analysis.get("target_customer_analysis") or f"Target customer clarity focused on {idea.target_customer or 'initial early adopters'}.",
+            "innovationAnalysis": llm_analysis.get("innovation_analysis") or "Proposed solution demonstrates technological and process advantages.",
+            "feasibilityAnalysis": llm_analysis.get("feasibility_analysis") or "Technical feasibility is manageable with existing tooling and frameworks.",
+            "revenueAnalysis": llm_analysis.get("revenue_analysis") or f"Monetization model based on {idea.business_model or 'direct transactions'}.",
+            "recommendations": [r.get("action", "") for r in recommendations[:5]],
+            "finalVerdict": strategic_verdict,
+            "recommendedAction": recommended_action,
+            "limitations": llm_analysis.get("limitations", [])
+        }
+
+        generation_mode = llm_analysis.get("generation_mode", "ai_standard")
+        degraded = llm_analysis.get("degraded", False)
+
+        # Synchronize idea.version safely
+        idea.version = next_version
+        self.db.commit()
+
         # Save Validation Results to DB (Always INSERT a new row)
         val_result = self.val_repo.create_validation_result(
             idea_id=idea.id,
-            version=idea.version,
+            version=next_version,
             model_name=self.llm_service.model_name,
             model_version=self.llm_service.model_version,
             prompt_version=prompt_version,
@@ -157,7 +209,16 @@ class ValidationService:
             overall_score=overall_score,
             confidence_score=confidence_score,
             classification=classification,
-            pipeline_timing=pipeline_timing
+            pipeline_timing=pipeline_timing,
+            session_id=session_id,
+            framework_version=FRAMEWORK_VERSION,
+            generation_mode=generation_mode,
+            degraded=degraded,
+            inputs_changed=inputs_changed,
+            summary=summary,
+            strategic_verdict=strategic_verdict,
+            recommended_action=recommended_action,
+            analysis_json=analysis_json,
         )
 
         # Format and save score records
@@ -208,18 +269,34 @@ class ValidationService:
             metadata=json.dumps({"input_hash": input_hash, "overall_score": overall_score})
         )
 
+        aggregated_7 = self.scoring_service.aggregate_to_7_parameters(param_scores)
+        classification_info = self.scoring_service.classify(overall_score)
+
         return {
             "idea_id": idea.id,
-            "version": idea.version,
+            "version": next_version,
+            "versionNumber": next_version,
             "validation_id": val_result.id,
+            "id": str(val_result.id),
+            "session_id": session_id,
             "overall_score": overall_score,
+            "overallScore": round(overall_score / 10.0, 1),
+            "validationPercentage": round(overall_score),
             "confidence_score": confidence_score,
-            "classification": classification,
-            "scores": param_scores,
+            "confidence": confidence_score,
+            "classification": classification_info["code"],
+            "validationCategory": classification_info["category"],
+            "classification_info": classification_info,
+            "summary": summary,
+            "strategic_verdict": strategic_verdict,
+            "recommended_action": recommended_action,
+            "scores": aggregated_7,
+            "detailed_scores": param_scores,
             "score_details": score_details_out,
-            "strengths": llm_analysis.get("strengths", []),
-            "weaknesses": llm_analysis.get("weaknesses", []),
-            "risks": llm_analysis.get("risks", []),
+            "analysis": analysis_json,
+            "strengths": analysis_json["strengths"],
+            "weaknesses": analysis_json["weaknesses"],
+            "risks": analysis_json["risks"],
             "information_gaps": gaps,
             "competitors": competitors_list,
             "evidence": evidence_list,
@@ -228,7 +305,11 @@ class ValidationService:
             "top_3_actions": [ta.dict() for ta in top_3_summary],
             "impact_predictions": [ip.dict() for ip in impact_predictions],
             "pipeline_timing": pipeline_timing,
-            "verification": verification
+            "verification": verification,
+            "generation_mode": generation_mode,
+            "degraded": degraded,
+            "framework_version": FRAMEWORK_VERSION,
+            "createdAt": val_result.created_at.isoformat()
         }
 
     def compare_validations(self, v1_val: Any, v2_val: Any) -> Dict[str, Any]:

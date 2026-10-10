@@ -117,3 +117,9 @@ def seed_idea(client, user_headers):
         }
     )
     return res.json()["data"]["id"]
+
+
+@pytest.fixture(scope="function")
+def test_user(db_session, user_token):
+    return db_session.query(User).filter(User.email == "testuser@example.com").first()
+
