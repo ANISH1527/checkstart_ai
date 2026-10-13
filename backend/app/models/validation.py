@@ -15,10 +15,17 @@ class ValidationResult(Base):
     version = Column(Integer, nullable=False, default=1)
     model_name = Column(String(100), nullable=False)
     model_version = Column(String(50), nullable=False)
-    prompt_version = Column(String(50), nullable=False)
+    prompt_version = Column(String(50), nullable=False, default="v1.3")
+    embedding_model_version = Column(String(50), nullable=True, default="all-MiniLM-L6-v2-v1.0")
+    scoring_version = Column(String(50), nullable=True, default="v2.0")
     input_hash = Column(String(64), nullable=False)
     overall_score = Column(Float, nullable=False)
     confidence_score = Column(Float, nullable=False)
+    confidence_breakdown = Column(JSON, nullable=True)
+    score_overrides = Column(JSON, nullable=True)
+    rules_version = Column(String(50), nullable=True, default="v1")
+    category = Column(String(50), nullable=True)
+    sample_spread = Column(JSON, nullable=True)
     classification = Column(String(50), nullable=False)
     pipeline_timing = Column(JSON, nullable=True)
     session_id = Column(String(64), ForeignKey("validation_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -32,6 +39,14 @@ class ValidationResult(Base):
     analysis_json = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+    @property
+    def confidence(self) -> float:
+        return self.confidence_score
+
+    @confidence.setter
+    def confidence(self, val: float):
+        self.confidence_score = val
+
     idea = relationship("Idea", back_populates="validations")
     session = relationship("ValidationSession", back_populates="validations")
     scores = relationship("ValidationScore", back_populates="validation", cascade="all, delete-orphan")
@@ -39,3 +54,4 @@ class ValidationResult(Base):
     competitors = relationship("Competitor", back_populates="validation", cascade="all, delete-orphan")
     recommendations = relationship("Recommendation", back_populates="validation", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="validation", cascade="all, delete-orphan")
+    feedback = relationship("UserFeedback", back_populates="validation", cascade="all, delete-orphan")

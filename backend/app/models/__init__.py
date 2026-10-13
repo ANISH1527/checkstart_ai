@@ -11,6 +11,7 @@ from app.models.audit_log import AuditLog
 from app.models.pipeline_job import PipelineJob
 from app.models.chat import ValidationSession, ConversationMessage
 from app.models.profile import UserProfile, UserPreference
+from app.models.user_feedback import UserFeedback
 
 __all__ = [
     "Base",
@@ -28,4 +29,5 @@ __all__ = [
     "ConversationMessage",
     "UserProfile",
     "UserPreference",
+    "UserFeedback",
 ]

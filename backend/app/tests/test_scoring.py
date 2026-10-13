@@ -106,3 +106,40 @@ def test_classify_all_bands():
     assert very_weak["label"] == "High Risk"
 
 
+def test_high_risk_idea_scores_lower_overall_than_low_risk_idea():
+    """High risk raw score must produce lower overall contribution than low risk"""
+    from app.services.scoring_service import ScoringService
+    svc = ScoringService()
+
+    # Base scores identical except risk_level
+    base_scores = {
+        "market_demand": 70,
+        "problem_solution_fit": 70,
+        "target_customer_clarity": 70,
+        "competition": 70,
+        "uniqueness_innovation": 70,
+        "technical_feasibility": 70,
+        "business_potential": 70,
+        "scalability": 70,
+        "risk_level": 80,  # HIGH risk
+    }
+    low_risk_scores = {**base_scores, "risk_level": 20}  # LOW risk
+
+    high_risk_result = svc.calculate(base_scores)
+    low_risk_result = svc.calculate(low_risk_scores)
+
+    assert high_risk_result["overall_score"] < low_risk_result["overall_score"], (
+        "High risk idea must score lower than low risk idea. "
+        f"Got high_risk={high_risk_result['overall_score']}, "
+        f"low_risk={low_risk_result['overall_score']}"
+    )
+
+
+def test_frontend_param_map_keys_match_validation_score_parameters():
+    """All FRONTEND_PARAM_MAP values must exist as valid scoring parameters"""
+    from app.services.scoring_service import FRONTEND_PARAM_MAP, WEIGHTS
+    for frontend_key, backend_param in FRONTEND_PARAM_MAP.items():
+        assert backend_param in WEIGHTS, (
+            f"Frontend param '{frontend_key}' maps to '{backend_param}' "
+            f"which is not in WEIGHTS dict"
+        )

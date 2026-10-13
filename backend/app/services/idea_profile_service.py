@@ -133,7 +133,7 @@ class IdeaProfileExtractor:
             supply_side = "local sellers / service providers"
 
         # Revenue model & pricing extraction
-        revenue_model = exp_rev_model
+        revenue_model = exp_rev_model or exp_biz_model
         pricing = exp_pricing
         if not revenue_model:
             if "commission" in text_lower:

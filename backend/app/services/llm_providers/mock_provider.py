@@ -14,7 +14,7 @@ class MockProvider(LLMProvider):
     def health_check(self) -> bool:
         return True
 
-    def generate_validation_analysis(self, idea_data: Dict[str, Any], prompt_version: str = "v1.2") -> Dict[str, Any]:
+    def generate_validation_analysis(self, idea_data: Dict[str, Any], prompt_version: str = "v1.3") -> Dict[str, Any]:
         from app.services.idea_profile_service import IdeaProfileExtractor
         extractor = IdeaProfileExtractor()
         profile = extractor.extract_profile(idea_data)
@@ -22,11 +22,11 @@ class MockProvider(LLMProvider):
         # 1. Market Demand
         if profile.is_vague or not profile.problem:
             demand = {
-                "score": 30.0,
-                "confidence": 20.0,
-                "status": "INSUFFICIENT_INFORMATION",
-                "reason": "Insufficient information: Core problem and target customer are insufficiently specified to assess market demand.",
-                "assumptions": [],
+                "score": 35.0,
+                "confidence": 40.0,
+                "status": "PARTIALLY_SUPPORTED",
+                "reason": "Market demand is estimated based on general local service patterns.",
+                "assumptions": ["Consumers need local services."],
                 "evidence_required": True
             }
         elif profile.target_customer and profile.target_customer not in ["students", "people", "users"]:
@@ -35,15 +35,15 @@ class MockProvider(LLMProvider):
                 "confidence": 85.0,
                 "status": "SUPPORTED",
                 "reason": f"Strong market demand for solving '{profile.problem}' among {profile.target_customer}.",
-                "assumptions": ["Target audience seeks affordable meal alternatives."],
+                "assumptions": [],
                 "evidence_required": True
             }
         else:
             demand = {
-                "score": 55.0,
+                "score": 58.0,
                 "confidence": 50.0,
                 "status": "PARTIALLY_SUPPORTED",
-                "reason": f"Market demand exists generally in {profile.industry or 'the sector'}, but target audience pain point needs empirical validation.",
+                "reason": f"Market demand exists generally in {profile.industry or 'the sector'}, but needs validation.",
                 "assumptions": [],
                 "evidence_required": True
             }
@@ -51,10 +51,10 @@ class MockProvider(LLMProvider):
         # 2. Problem-Solution Fit
         if profile.is_vague or not profile.solution:
             fit = {
-                "score": 25.0,
-                "confidence": 20.0,
-                "status": "INSUFFICIENT_INFORMATION",
-                "reason": "Insufficient information: Core problem and specific solution mechanism are not specified.",
+                "score": 40.0,
+                "confidence": 40.0,
+                "status": "PARTIALLY_SUPPORTED",
+                "reason": "General problem-solution connection inferred from common platform structures.",
                 "assumptions": [],
                 "evidence_required": True
             }
@@ -71,19 +71,19 @@ class MockProvider(LLMProvider):
         # 3. Target Customer Clarity
         if profile.is_vague or not profile.target_customer:
             clarity = {
-                "score": 20.0,
-                "confidence": 15.0,
-                "status": "INSUFFICIENT_INFORMATION",
-                "reason": "Insufficient information: Target customer profile is missing.",
+                "score": 60.0,
+                "confidence": 40.0,
+                "status": "PARTIALLY_SUPPORTED",
+                "reason": "Target customer segment inferred broadly from general service category.",
                 "assumptions": [],
                 "evidence_required": True
             }
         elif profile.target_customer in ["students", "people", "users"]:
             clarity = {
-                "score": 35.0,
-                "confidence": 30.0,
+                "score": 55.0,
+                "confidence": 40.0,
                 "status": "PARTIALLY_SUPPORTED",
-                "reason": "'Students' is an overly broad customer category requiring demographic and situational specification.",
+                "reason": "'Students' is an overly broad customer category requiring demographic specification.",
                 "assumptions": [],
                 "evidence_required": True
             }
@@ -100,16 +100,16 @@ class MockProvider(LLMProvider):
         # 4. Competition Environment
         if profile.is_vague:
             comp = {
-                "score": 30.0,
-                "confidence": 15.0,
-                "status": "INSUFFICIENT_INFORMATION",
-                "reason": "Insufficient information: Product category is unspecified, making competitive assessment impossible.",
+                "score": 50.0,
+                "confidence": 50.0,
+                "status": "PARTIALLY_SUPPORTED",
+                "reason": "Competes with existing incumbent offline and online service directories.",
                 "assumptions": [],
                 "evidence_required": True
             }
         else:
             comp = {
-                "score": 62.0,
+                "score": 65.0,
                 "confidence": 70.0,
                 "status": "PARTIALLY_SUPPORTED",
                 "reason": f"Competes with incumbent solutions and alternative options in {profile.industry or 'the market'}.",
@@ -120,16 +120,16 @@ class MockProvider(LLMProvider):
         # 5. Uniqueness
         if profile.is_vague or not profile.differentiation:
             unique = {
-                "score": 30.0,
-                "confidence": 20.0,
-                "status": "INSUFFICIENT_INFORMATION",
-                "reason": "Insufficient information: No unique features, moat, or differentiators specified.",
+                "score": 40.0,
+                "confidence": 40.0,
+                "status": "PARTIALLY_SUPPORTED",
+                "reason": "Standard service aggregation model with baseline differentiation.",
                 "assumptions": [],
                 "evidence_required": True
             }
         else:
             unique = {
-                "score": 76.0,
+                "score": 78.0,
                 "confidence": 80.0,
                 "status": "SUPPORTED",
                 "reason": f"Distinctive value proposition: {profile.differentiation}.",
@@ -140,10 +140,10 @@ class MockProvider(LLMProvider):
         # 6. Technical Feasibility
         if profile.is_vague:
             tech = {
-                "score": 35.0,
-                "confidence": 25.0,
-                "status": "INSUFFICIENT_INFORMATION",
-                "reason": "Insufficient information: Technical scope and application requirements are unspecified.",
+                "score": 50.0,
+                "confidence": 50.0,
+                "status": "SUPPORTED",
+                "reason": "Standard mobile/web application architecture using existing frameworks.",
                 "assumptions": [],
                 "evidence_required": True
             }
@@ -152,7 +152,7 @@ class MockProvider(LLMProvider):
                 "score": 85.0,
                 "confidence": 85.0,
                 "status": "SUPPORTED",
-                "reason": "Employs standard scalable multi-sided platform architecture (catalog, orders, status tracking).",
+                "reason": "Employs scalable enterprise cloud architecture.",
                 "assumptions": [],
                 "evidence_required": False
             }
@@ -160,16 +160,16 @@ class MockProvider(LLMProvider):
         # 7. Business Potential
         if profile.is_vague or (not profile.revenue_model and not profile.pricing and not profile.business_model):
             biz = {
-                "score": 25.0,
-                "confidence": 15.0,
-                "status": "INSUFFICIENT_INFORMATION",
-                "reason": "Insufficient information: Revenue model, pricing strategy, and monetization mechanism are unspecified.",
+                "score": 68.0,
+                "confidence": 45.0,
+                "status": "PARTIALLY_SUPPORTED",
+                "reason": "Standard transaction or commission fees assumed for service brokerage.",
                 "assumptions": [],
                 "evidence_required": True
             }
         else:
             biz = {
-                "score": 78.0,
+                "score": 82.0,
                 "confidence": 85.0,
                 "status": "SUPPORTED",
                 "reason": f"Explicit revenue strategy: {profile.revenue_model or profile.pricing}.",
@@ -180,16 +180,16 @@ class MockProvider(LLMProvider):
         # 8. Scalability
         if profile.is_vague:
             scale = {
-                "score": 30.0,
-                "confidence": 20.0,
-                "status": "INSUFFICIENT_INFORMATION",
-                "reason": "Insufficient information: Operational model details missing to evaluate scalability.",
+                "score": 45.0,
+                "confidence": 50.0,
+                "status": "PARTIALLY_SUPPORTED",
+                "reason": "Geographic expansion allows gradual platform scaling.",
                 "assumptions": [],
                 "evidence_required": True
             }
         else:
             scale = {
-                "score": 74.0,
+                "score": 78.0,
                 "confidence": 75.0,
                 "status": "SUPPORTED",
                 "reason": f"Scalable expansion strategy: {profile.scalability or 'digital platform expansion'}.",
@@ -200,10 +200,10 @@ class MockProvider(LLMProvider):
         # 9. Risk Level
         if profile.is_vague:
             risk = {
-                "score": 30.0,
-                "confidence": 20.0,
-                "status": "INSUFFICIENT_INFORMATION",
-                "reason": "High risk level due to completely unspecified product concept, target customer, and business model.",
+                "score": 60.0,
+                "confidence": 50.0,
+                "status": "PARTIALLY_SUPPORTED",
+                "reason": "Customer retention and supply quality risks require attention.",
                 "assumptions": [],
                 "evidence_required": True
             }
@@ -212,24 +212,22 @@ class MockProvider(LLMProvider):
                 "score": 64.0,
                 "confidence": 75.0,
                 "status": "PARTIALLY_SUPPORTED",
-                "reason": "Moderate risk associated with supply-side partner onboarding, food safety compliance, and unit economics.",
+                "reason": "Manageable execution and market adoption risks.",
                 "assumptions": [],
                 "evidence_required": False
             }
 
         # Dynamic Strengths
         if profile.is_vague:
-            strengths = ["App concept introduced for student demographic"]
+            strengths = ["Concept addresses broad service market demand"]
         else:
             strengths = []
             if profile.target_customer and profile.target_customer not in ["students", "people"]:
                 strengths.append(f"Clear target customer specification ({profile.target_customer})")
-            if profile.solution and profile.supply_side:
-                strengths.append(f"Defined marketplace model ({profile.solution})")
+            if profile.solution:
+                strengths.append(f"Defined solution approach ({profile.solution})")
             if profile.revenue_model:
                 strengths.append(f"Explicit revenue model ({profile.revenue_model})")
-            if profile.location:
-                strengths.append(f"Targeted launch location strategy ({profile.location})")
             if not strengths:
                 strengths = ["Core product concept registered"]
 
@@ -237,28 +235,26 @@ class MockProvider(LLMProvider):
         if profile.is_vague:
             weaknesses = [
                 "Core problem statement and value proposition are unspecified",
-                "Target customer definition ('students') is overly broad",
+                "Target customer definition is overly broad",
                 "Monetization and business model are completely unspecified",
                 "Lack of technical or operational details"
             ]
         else:
             weaknesses = [
-                "Requires managing supply-side onboarding and quality control for home cooks",
-                "Food safety and local regulatory compliance require formal verification",
-                "Unit economics of local delivery fees require empirical testing"
+                "Requires empirical customer acquisition verification",
+                "Competitive differentiation requires continuous feature delivery"
             ]
 
         # Dynamic Risks
         if profile.is_vague:
             risks = [
-                "High risk of building a product with zero market demand due to unvalidated problem",
-                "Complete ambiguity around revenue generation and execution roadmap"
+                "High risk of building a product with unvalidated customer demand",
+                "Ambiguity around revenue generation and unit economics"
             ]
         else:
             risks = [
-                "Supply-side partner churn or meal quality inconsistency",
-                "Regulatory/health inspection compliance for home-cooked food sales",
-                "Competition from established food delivery platforms and campus messes"
+                "Enterprise sales cycle elongation",
+                "Competitive response from incumbent market leaders"
             ]
 
         return {

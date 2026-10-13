@@ -10,8 +10,16 @@ class ReportService:
         lines.append(f"**Confidence Level:** {validation_response.get('confidence_score')}%\n")
 
         lines.append("## Parameter Breakdown")
-        for param, score in validation_response.get("scores", {}).items():
-            lines.append(f"- **{param.replace('_', ' ').title()}:** {score}/100")
+        raw_scores = validation_response.get("detailed_scores") or validation_response.get("scores", {})
+        if isinstance(raw_scores, list):
+            scores_dict = {s.get("parameter", "Unknown"): s.get("score", 0.0) for s in raw_scores if isinstance(s, dict)}
+        elif isinstance(raw_scores, dict):
+            scores_dict = raw_scores
+        else:
+            scores_dict = {}
+
+        for param, score in scores_dict.items():
+            lines.append(f"- **{str(param).replace('_', ' ').title()}:** {score}/100")
 
         lines.append("\n## Actionable Recommendations")
         for rec in validation_response.get("recommendations", []):

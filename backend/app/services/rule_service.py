@@ -88,21 +88,27 @@ class RuleService:
                 "message": "Solution approach details are sparse or missing."
             })
 
-        # Rule 6: High similarity check
-        high_sim = [s for s in similarity_results if s.get("category") == "HIGH"]
-        if high_sim:
+        # Rule 6: High similarity check (only fires on external high-similarity ideas)
+        sim_list = similarity_results.get("similar_ideas", similarity_results) if isinstance(similarity_results, dict) else similarity_results
+        high_overlap_external = [
+            s for s in sim_list
+            if s.get("overlap_level", s.get("category")) == "HIGH" and not s.get("is_same_user", False)
+        ]
+        if high_overlap_external:
             rule_results.append({
                 "rule": "HIGH_SIMILARITY_WARNING",
                 "passed": False,
                 "severity": "HIGH",
-                "message": f"High semantic similarity detected with {len(high_sim)} existing startup ideas."
+                "affects_parameter": "competition",
+                "message": f"High semantic similarity detected with {len(high_overlap_external)} existing startup ideas."
             })
         else:
             rule_results.append({
                 "rule": "HIGH_SIMILARITY_WARNING",
                 "passed": True,
                 "severity": "LOW",
-                "message": "No duplicate or highly similar idea found in repository."
+                "affects_parameter": "competition",
+                "message": "No duplicate or highly similar external idea found in repository."
             })
 
         # Rule 7: Security check for prompt injection
@@ -111,6 +117,7 @@ class RuleService:
                 "rule": "SECURITY_PROMPT_INJECTION",
                 "passed": False,
                 "severity": "CRITICAL",
+                "affects_parameter": "business_potential",
                 "message": "Malicious prompt injection keywords detected."
             })
 

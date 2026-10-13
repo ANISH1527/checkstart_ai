@@ -2,7 +2,8 @@ from typing import Dict, Any, Optional
 from app.core.config import settings
 from app.services.llm_providers import LLMProvider, GeminiProvider, MockProvider
 
-PROMPT_VERSION = "v1.2"
+PROMPT_VERSION = "v1.3"
+LLM_PROMPT_VERSION = "v1.3"
 
 
 def get_llm_service(provider_override: Optional[str] = None) -> LLMProvider:

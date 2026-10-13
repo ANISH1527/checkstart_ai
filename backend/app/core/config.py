@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str = "llama3"
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
     SIMILARITY_THRESHOLD: float = 0.85
+    SIMILARITY_HIGH_THRESHOLD: float = 0.85
+    SIMILARITY_MED_THRESHOLD: float = 0.72
+    SIMILARITY_MIN_IDEAS_FOR_FLAG: int = 1
 
     @property
     def SECRET_KEY(self) -> str:

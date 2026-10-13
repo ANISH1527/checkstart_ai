@@ -39,8 +39,11 @@ class ValidationService:
         self.gap_service = InformationGapService()
         self.rec_service = RecommendationService()
 
-    def run_validation_pipeline(self, idea: Idea, session_id: Optional[str] = None) -> Dict[str, Any]:
+    def run_validation_pipeline(self, idea: Any, session_id: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
         from app.services.scoring_service import FRAMEWORK_VERSION
+
+        if isinstance(idea, int):
+            idea = self.idea_repo.get_by_id(idea)
 
         pipeline_timing: Dict[str, float] = {}
 
@@ -103,9 +106,16 @@ class ValidationService:
                     candidates.append({
                         "id": o.id,
                         "title": o.title,
+                        "description": o.description,
+                        "user_id": o.user_id,
                         "embedding": self.embedding_service.deserialize_embedding(latest_emb.vector_reference)
                     })
-            return self.similarity_service.find_similar_ideas(embedding_vec, candidates)
+            return self.similarity_service.find_similar_ideas(
+                embedding_vec,
+                candidates,
+                idea_text=f"{idea.title} {idea.description}",
+                target_user_id=getattr(idea, "user_id", None)
+            )
 
         similarity_results = time_layer(4, "similarity_matching", run_layer_4)
 
@@ -120,13 +130,57 @@ class ValidationService:
         llm_analysis = time_layer(7, "llm_analysis", self.llm_service.generate_validation_analysis, idea_dict, prompt_version=prompt_version)
 
         # 8. Post-LLM Verification Check
-        verification = time_layer(8, "verification_check", self.verification_service.verify, idea_dict, llm_analysis, rule_results, idea_profile=idea_profile)
+        import logging
+        logger = logging.getLogger(__name__)
 
-        # 9. Scoring Engine
-        overall_score, classification, param_scores = time_layer(9, "scoring_engine", self.scoring_service.calculate_scores, llm_analysis)
+        raw_llm_scores = llm_analysis.get("scores") or llm_analysis.get("parameters") or llm_analysis
+        logger.warning(f"RAW LLM SCORES: {raw_llm_scores}")
+
+        verification = time_layer(
+            8,
+            "verification_check",
+            self.verification_service.verify,
+            user_input=idea_dict,
+            llm_output=llm_analysis,
+            rule_results=rule_results,
+            idea_profile=idea_profile,
+            evidence_list=evidence_list,
+            llm_scores=raw_llm_scores,
+            profile=idea_profile,
+            evidence_results=evidence_list,
+            idea_id=idea.id
+        )
+
+        logger.warning(f"VERIFIED SCORES: {verification.get('verified_scores')}")
+        logger.warning(f"OVERRIDES APPLIED: {verification.get('overrides_applied')}")
+
+        # 9. Scoring Engine — MUST use verified_scores, NOT raw_llm_scores
+        final_scores = verification["verified_scores"]
+        overall_score, classification, param_scores = time_layer(
+            9,
+            "scoring_engine",
+            self.scoring_service.calculate_scores,
+            final_scores
+        )
 
         # 10. Confidence Engine
-        confidence_score = time_layer(10, "confidence_engine", self.confidence_service.calculate_confidence, idea_dict, llm_analysis, evidence_list, rule_results, idea_profile=idea_profile)
+        confidence_result = time_layer(
+            10,
+            "confidence_engine",
+            self.confidence_service.calculate_confidence,
+            idea_dict,
+            final_scores,
+            evidence_list,
+            rule_results,
+            idea_profile=idea_profile,
+            overrides_applied=verification.get("overrides_applied", [])
+        )
+        if isinstance(confidence_result, dict):
+            confidence_score = float(confidence_result.get("confidence_score", 50.0))
+            confidence_breakdown = confidence_result.get("confidence_breakdown", {})
+        else:
+            confidence_score = float(confidence_result)
+            confidence_breakdown = getattr(confidence_result, "confidence_breakdown", {})
 
         # 11. Information Gap Detection
         gaps = time_layer(11, "information_gaps", self.gap_service.detect_gaps, idea_dict, llm_analysis, idea_profile=idea_profile)
@@ -198,13 +252,28 @@ class ValidationService:
         idea.version = next_version
         self.db.commit()
 
+        from app.services.llm_service import LLM_PROMPT_VERSION
+        from app.services.embedding_service import EMBEDDING_MODEL_VERSION
+        from app.services.scoring_service import SCORING_ENGINE_VERSION
+        RULES_VERSION = "v1"   # bumped per Phase 4
+
+        # category = classification label for per-category weight sets (Phase 5)
+        category = self.scoring_service.classify(overall_score).get("category")
+
         # Save Validation Results to DB (Always INSERT a new row)
         val_result = self.val_repo.create_validation_result(
             idea_id=idea.id,
             version=next_version,
             model_name=self.llm_service.model_name,
             model_version=self.llm_service.model_version,
-            prompt_version=prompt_version,
+            prompt_version=LLM_PROMPT_VERSION,
+            embedding_model_version=EMBEDDING_MODEL_VERSION,
+            scoring_version=SCORING_ENGINE_VERSION,
+            score_overrides=verification.get("overrides_applied", []),
+            confidence_breakdown=confidence_breakdown,
+            rules_version=RULES_VERSION,
+            category=category,
+            sample_spread=None,   # populated by Phase 2 multi-sample scoring
             input_hash=input_hash,
             overall_score=overall_score,
             confidence_score=confidence_score,
@@ -220,6 +289,7 @@ class ValidationService:
             recommended_action=recommended_action,
             analysis_json=analysis_json,
         )
+
 
         # Format and save score records
         scores_db_format = []
@@ -284,14 +354,20 @@ class ValidationService:
             "validationPercentage": round(overall_score),
             "confidence_score": confidence_score,
             "confidence": confidence_score,
+            "confidence_breakdown": confidence_breakdown,
+            "score_overrides": verification.get("overrides_applied", []),
+            "prompt_version": LLM_PROMPT_VERSION,
+            "embedding_model_version": EMBEDDING_MODEL_VERSION,
+            "scoring_version": SCORING_ENGINE_VERSION,
             "classification": classification_info["code"],
             "validationCategory": classification_info["category"],
             "classification_info": classification_info,
             "summary": summary,
             "strategic_verdict": strategic_verdict,
             "recommended_action": recommended_action,
-            "scores": aggregated_7,
+            "scores": score_details_out,
             "detailed_scores": param_scores,
+            "aggregated_scores": aggregated_7,
             "score_details": score_details_out,
             "analysis": analysis_json,
             "strengths": analysis_json["strengths"],

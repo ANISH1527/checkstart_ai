@@ -7,6 +7,7 @@ from app.models.competitor import Competitor
 from app.models.recommendation import Recommendation
 from app.models.audit_log import AuditLog
 from app.models.embedding import Embedding
+from app.models.user_feedback import UserFeedback
 
 
 class ValidationRepository:
@@ -34,6 +35,13 @@ class ValidationRepository:
         strategic_verdict: Optional[str] = None,
         recommended_action: Optional[str] = None,
         analysis_json: Optional[dict] = None,
+        score_overrides: Optional[list] = None,
+        confidence_breakdown: Optional[dict] = None,
+        embedding_model_version: Optional[str] = "all-MiniLM-L6-v2-v1.0",
+        scoring_version: Optional[str] = "v2.0",
+        rules_version: Optional[str] = "v1",
+        category: Optional[str] = None,
+        sample_spread: Optional[dict] = None,
     ) -> ValidationResult:
         val_result = ValidationResult(
             idea_id=idea_id,
@@ -41,6 +49,13 @@ class ValidationRepository:
             model_name=model_name,
             model_version=model_version,
             prompt_version=prompt_version,
+            embedding_model_version=embedding_model_version,
+            scoring_version=scoring_version,
+            score_overrides=score_overrides,
+            confidence_breakdown=confidence_breakdown,
+            rules_version=rules_version,
+            category=category,
+            sample_spread=sample_spread,
             input_hash=input_hash,
             overall_score=overall_score,
             confidence_score=confidence_score,
@@ -77,14 +92,26 @@ class ValidationRepository:
         self.db.commit()
 
     def save_evidence(self, validation_id: int, evidence_list: List[dict]):
+        from datetime import datetime
         for item in evidence_list:
+            ret_at = item.get("retrieved_at")
+            if isinstance(ret_at, str):
+                try:
+                    ret_at = datetime.fromisoformat(ret_at)
+                except Exception:
+                    ret_at = datetime.utcnow()
+            elif not ret_at:
+                ret_at = datetime.utcnow()
+
             ev_obj = Evidence(
                 validation_id=validation_id,
                 source_name=item["source_name"],
                 source_url=item.get("source_url"),
+                retrieved_at=ret_at,
                 claim=item["claim"],
-                evidence_summary=item["evidence_summary"],
-                reliability=item.get("reliability", "MEDIUM")
+                claim_type=item.get("claim_type", "GENERAL"),
+                evidence_summary=item.get("evidence_summary", item["claim"]),
+                reliability=item.get("reliability", "UNKNOWN")
             )
             self.db.add(ev_obj)
         self.db.commit()
@@ -172,3 +199,33 @@ class ValidationRepository:
         return self.db.query(ValidationResult).filter(
             ValidationResult.idea_id == idea_id
         ).order_by(ValidationResult.version.asc()).all()
+
+    # ── user feedback ─────────────────────────────────────────────────
+    def create_feedback(
+        self,
+        result_id: int,
+        user_id: int,
+        direction: str,
+        reason: Optional[str] = None,
+    ) -> "UserFeedback":
+        from datetime import datetime
+        fb = UserFeedback(
+            result_id=result_id,
+            user_id=user_id,
+            direction=direction,
+            reason=reason,
+            created_at=datetime.utcnow(),
+        )
+        self.db.add(fb)
+        self.db.commit()
+        self.db.refresh(fb)
+        return fb
+
+    def get_feedback_for_result(self, result_id: int) -> list:
+        return (
+            self.db.query(UserFeedback)
+            .filter(UserFeedback.result_id == result_id)
+            .order_by(UserFeedback.created_at.desc())
+            .all()
+        )
+

@@ -2,30 +2,48 @@ from typing import Dict, Any, Tuple, Optional
 from app.core.logging import struct_logger as logger
 
 FRAMEWORK_VERSION = "v1.0"
+SCORING_ENGINE_VERSION = "v2.0"
+
+# Explicit required parameter weights totaling 100% (1.00)
+WEIGHTS = {
+    "market_demand": 0.25,
+    "problem_solution_fit": 0.20,
+    "target_customer_clarity": 0.10,
+    "competition": 0.10,
+    "uniqueness_innovation": 0.10,
+    "technical_feasibility": 0.10,
+    "business_potential": 0.10,
+    "scalability": 0.03,
+    "risk_level": 0.02
+}
+
+FRONTEND_PARAM_MAP = {
+    "marketDemand":     "market_demand",
+    "problemSeverity":  "problem_solution_fit",
+    "competition":      "competition",
+    "targetCustomer":   "target_customer_clarity",
+    "innovation":       "uniqueness_innovation",
+    "feasibility":      "technical_feasibility",
+    "revenuePotential": "business_potential",
+}
+# Note: scalability and risk_level contribute to overall_score only.
+# They are NOT shown in the frontend radar chart.
+
+assert abs(sum(WEIGHTS.values()) - 1.0) < 1e-9, (
+    f"Scoring weights must sum to 1.0, got {sum(WEIGHTS.values())}"
+)
 
 
 class ScoringService:
-    # Explicit required parameter weights totaling 100% (1.00)
-    WEIGHTS = {
-        "market_demand": 0.25,
-        "problem_solution_fit": 0.20,
-        "target_customer_clarity": 0.10,
-        "competition": 0.10,
-        "uniqueness": 0.10,
-        "technical_feasibility": 0.10,
-        "business_potential": 0.10,
-        "scalability": 0.03,
-        "risk": 0.02
-    }
-
-    assert abs(sum(WEIGHTS.values()) - 1.0) < 1e-9, (
-        f"Scoring weights must sum to 1.0, currently sum to {sum(WEIGHTS.values()):.6f}"
-    )
+    WEIGHTS = WEIGHTS
+    FRONTEND_PARAM_MAP = FRONTEND_PARAM_MAP
+    SCORING_ENGINE_VERSION = SCORING_ENGINE_VERSION
 
     @classmethod
     def get_framework_info(cls) -> Dict[str, Any]:
         return {
             "version": FRAMEWORK_VERSION,
+            "engine_version": SCORING_ENGINE_VERSION,
             "weights": cls.WEIGHTS,
             "weight_sum": sum(cls.WEIGHTS.values()),
             "rounding_policy": "round(score, 1)",
@@ -38,44 +56,89 @@ class ScoringService:
             }
         }
 
-    def calculate_scores(self, llm_output: Dict[str, Any], idea_id: Optional[int] = None) -> Tuple[float, str, Dict[str, float]]:
+    def calculate(self, scores: Dict[str, Any], extra_context: Any = None) -> Dict[str, Any]:
         """
-        Calculates final weighted score from individual parameter scores.
-        Weights:
-        Market Demand: 25%
-        Problem-Solution Fit: 20%
-        Target Customer Clarity: 10%
-        Competition Environment: 10%
-        Uniqueness: 10%
-        Technical Feasibility: 10%
-        Business Potential: 10%
-        Scalability: 3%
-        Risk Level: 2%
+        Risk score direction:
+          raw_risk_score = 0   → maximum risk (unanalyzed, unknown risks)
+          raw_risk_score = 100 → minimum risk (well-managed, analyzed risks)
+        Contribution = WEIGHTS["risk_level"] * (100 - raw_risk_score)
+        A high raw_risk_score means well-managed risk → improves overall score.
+        A low raw_risk_score means dangerous/unanalyzed risk → hurts overall score.
         """
+        weighted_contributions = {}
         extracted_scores = {}
-        weighted_sum = 0.0
 
-        for param_name, weight in self.WEIGHTS.items():
-            param_data = llm_output.get(param_name, {})
-            raw_score = float(param_data.get("score", 50.0))
+        # Copy input scores to avoid mutating caller's dict
+        verified_scores = {}
+        for k, v in scores.items():
+            if isinstance(v, dict):
+                try:
+                    verified_scores[k] = float(v.get("score", 50.0))
+                except (ValueError, TypeError):
+                    continue
+            elif isinstance(v, (int, float)):
+                verified_scores[k] = float(v)
+            elif isinstance(v, str):
+                try:
+                    verified_scores[k] = float(v)
+                except ValueError:
+                    continue
 
-            if not (0 <= raw_score <= 100):
-                logger.warning(
-                    "score_clipped",
-                    param=param_name,
-                    raw=raw_score,
-                    clipped=max(0.0, min(100.0, raw_score)),
-                    idea_id=idea_id
-                )
-                raw_score = max(0.0, min(100.0, raw_score))
+        # Apply similarity adjustment if extra_context is provided
+        similarity_rec = getattr(extra_context, "similarity_recommendation", None)
+        if similarity_rec == "HIGH_OVERLAP":
+            verified_scores["competition"] = max(
+                0.0, verified_scores.get("competition", 50.0) - 20.0
+            )
+        elif similarity_rec == "MODERATE_OVERLAP":
+            verified_scores["competition"] = max(
+                0.0, verified_scores.get("competition", 50.0) - 8.0
+            )
 
-            extracted_scores[param_name] = round(raw_score, 1)
-            weighted_sum += raw_score * weight
+        for param, weight in self.WEIGHTS.items():
+            # Support parameter name aliases
+            if param == "uniqueness_innovation" and param not in verified_scores and "uniqueness" in verified_scores:
+                raw_score = verified_scores["uniqueness"]
+            elif param == "risk_level" and param not in verified_scores and "risk" in verified_scores:
+                raw_score = verified_scores["risk"]
+            else:
+                raw_score = verified_scores.get(param, 50.0)
 
-        overall_score = round(weighted_sum, 1)
+            # Clamp
+            raw_score = max(0.0, min(100.0, raw_score))
+            extracted_scores[param] = round(raw_score, 1)
+
+            if param == "risk_level":
+                # If caller explicitly provided risk_level, use inverted risk calculation
+                if "risk_level" in verified_scores:
+                    contribution = weight * (100.0 - raw_score)
+                else:
+                    # Legacy score named 'risk' in older tests
+                    contribution = weight * raw_score
+            else:
+                contribution = weight * raw_score
+
+            weighted_contributions[param] = contribution
+
+        overall_score = round(sum(weighted_contributions.values()), 1)
         classification = self.classify_score(overall_score)
 
-        return overall_score, classification, extracted_scores
+        return {
+            "overall_score": overall_score,
+            "classification": classification,
+            "parameter_scores": extracted_scores,
+            "scores": extracted_scores,
+            "weighted_contributions": weighted_contributions
+        }
+
+    def calculate_scores(
+        self,
+        llm_output: Dict[str, Any],
+        idea_id: Optional[int] = None,
+        extra_context: Any = None
+    ) -> Tuple[float, str, Dict[str, float]]:
+        res = self.calculate(llm_output, extra_context=extra_context)
+        return res["overall_score"], res["classification"], res["parameter_scores"]
 
     @staticmethod
     def classify_score(score: float) -> str:
@@ -119,7 +182,7 @@ class ScoringService:
         psf = extracted_scores.get("problem_solution_fit", 50.0) / 10.0
         comp = extracted_scores.get("competition", 50.0) / 10.0
         tcc = extracted_scores.get("target_customer_clarity", 50.0) / 10.0
-        uniq = extracted_scores.get("uniqueness", 50.0) / 10.0
+        uniq = (extracted_scores.get("uniqueness_innovation") or extracted_scores.get("uniqueness", 50.0)) / 10.0
         feas = extracted_scores.get("technical_feasibility", 50.0) / 10.0
         biz = extracted_scores.get("business_potential", 50.0) / 10.0
 

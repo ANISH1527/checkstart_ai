@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel, ConfigDict
 
 
@@ -26,6 +26,7 @@ class EvidenceDetail(BaseModel):
     source_url: Optional[str] = None
     retrieved_at: Optional[datetime] = None
     claim: str
+    claim_type: Optional[str] = "GENERAL"
     evidence_summary: str
     reliability: str = "MEDIUM"
 
@@ -72,8 +73,13 @@ class ValidationResponse(BaseModel):
     validation_id: Optional[int] = None
     overall_score: float
     confidence_score: float
+    confidence_breakdown: Optional[Dict[str, Any]] = None
+    score_overrides: Optional[List[Union[Dict[str, Any], str]]] = None
+    prompt_version: Optional[str] = None
+    embedding_model_version: Optional[str] = None
+    scoring_version: Optional[str] = None
     classification: str
-    scores: Dict[str, float]
+    scores: Union[Dict[str, float], List[Any]] = {}
     score_details: List[ScoreDetail] = []
     strengths: List[str] = []
     weaknesses: List[str] = []

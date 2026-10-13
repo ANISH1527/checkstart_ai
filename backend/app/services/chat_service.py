@@ -913,7 +913,11 @@ class ChatService:
             delta = round(val_result["overall_score"] - prev_report.overall_score, 1)
 
         # Append assistant message of type VALIDATION_COMPLETED
-        scores_map = val_result.get("scores", {})
+        scores_map = val_result.get("detailed_scores") or val_result.get("scores", {})
+        if isinstance(scores_map, list):
+            scores_map = {s["parameter"]: s["score"] for s in scores_map if isinstance(s, dict) and "parameter" in s}
+        elif not isinstance(scores_map, dict):
+            scores_map = {}
         labels = {
             "marketDemand": "Market Demand",
             "problemSeverity": "Problem Severity",
