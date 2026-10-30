@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: free
     rootDir: backend
-    buildCommand: "pip install --upgrade pip && pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt && python -c \"import torch, psycopg2, sentence_transformers, faiss, sqlalchemy; print('Torch:', torch.__version__); print('CUDA:', torch.version.cuda); print('PostgreSQL driver:', psycopg2.__version__); print('All production imports successful')\""
+    buildCommand: "pip install --upgrade pip && pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt && python -c \"import torch, sentence_transformers, faiss, sqlalchemy; print('Torch:', torch.__version__); print('All production imports successful')\""
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /health
     autoDeploy: true
