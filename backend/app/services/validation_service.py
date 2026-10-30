@@ -89,32 +89,58 @@ class ValidationService:
 
         # 3. Embedding & Vector Storage
         def run_layer_3():
-            embedding_vec = self.embedding_service.generate_embedding(f"{idea.title} {idea.description}")
+            text_to_embed = f"{idea.title} {idea.description}"
+            embedding_vec = self.embedding_service.generate_embedding(
+                text_to_embed,
+                idea_id=idea.id,
+                db=getattr(self.val_repo, "db", None)
+            )
             serialized_emb = self.embedding_service.serialize_embedding(embedding_vec)
             self.val_repo.save_embedding(idea.id, self.embedding_service.model_name, serialized_emb)
+
+            # Persist to idea_embeddings table with hash reuse
+            text_hash = self.embedding_service.cache_service.get_hash(text_to_embed)
+            version_val = getattr(idea, "version", 1)
+            self.val_repo.save_idea_embedding(
+                idea_id=idea.id,
+                version=version_val,
+                model_name=self.embedding_service.model_name,
+                vector=serialized_emb,
+                text_hash=text_hash
+            )
+
+            # Add to FAISS index
+            from app.services.faiss_service import faiss_service
+            faiss_service.add_vector(idea.id, embedding_vec, persist=True)
+
             return embedding_vec
 
         embedding_vec = time_layer(3, "vector_embedding", run_layer_3)
 
-        # 4. Similarity Search against existing ideas
+        # 4. Similarity Search against existing ideas (with FAISS & self-exclusion)
         def run_layer_4():
             other_ideas = self.idea_repo.get_all_ideas()
             candidates = []
             for o in other_ideas:
                 if o.id != idea.id and o.embeddings:
                     latest_emb = o.embeddings[-1]
-                    candidates.append({
-                        "id": o.id,
-                        "title": o.title,
-                        "description": o.description,
-                        "user_id": o.user_id,
-                        "embedding": self.embedding_service.deserialize_embedding(latest_emb.vector_reference)
-                    })
+                    try:
+                        emb_vec = self.embedding_service.deserialize_embedding(latest_emb.vector_reference)
+                        candidates.append({
+                            "id": o.id,
+                            "title": o.title,
+                            "description": o.description,
+                            "user_id": o.user_id,
+                            "embedding": emb_vec
+                        })
+                    except Exception:
+                        pass
             return self.similarity_service.find_similar_ideas(
                 embedding_vec,
                 candidates,
                 idea_text=f"{idea.title} {idea.description}",
-                target_user_id=getattr(idea, "user_id", None)
+                target_user_id=getattr(idea, "user_id", None),
+                exclude_idea_id=idea.id
             )
 
         similarity_results = time_layer(4, "similarity_matching", run_layer_4)
@@ -242,7 +268,9 @@ class ValidationService:
             "recommendations": [r.get("action", "") for r in recommendations[:5]],
             "finalVerdict": strategic_verdict,
             "recommendedAction": recommended_action,
-            "limitations": llm_analysis.get("limitations", [])
+            "limitations": llm_analysis.get("limitations", []),
+            "verified_claims": verification.get("verified_claims", []),
+            "score_overrides": [dict(o) for o in verification.get("overrides_applied", [])]
         }
 
         generation_mode = llm_analysis.get("generation_mode", "ai_standard")

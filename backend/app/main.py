@@ -49,6 +49,17 @@ async def lifespan(app: FastAPI):
     if settings.is_production and (not db_ok or not redis_ok):
         raise RuntimeError(f"Startup health check failed in production. DB OK: {db_ok}, Redis OK: {redis_ok}")
 
+    # Vector Index & Sample Data Initialization
+    try:
+        from app.database.connection import SessionLocal
+        from app.services.faiss_service import faiss_service
+        from app.services.seed_service import seed_sample_ventures_if_empty
+        with SessionLocal() as db:
+            seed_sample_ventures_if_empty(db)
+            faiss_service.rebuild_from_db(db)
+    except Exception as e:
+        logger.warning(f"Startup vector index initialization notice: {e}")
+
     yield
 
 

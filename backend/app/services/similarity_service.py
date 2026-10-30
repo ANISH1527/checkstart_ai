@@ -1,8 +1,9 @@
-from typing import List, Dict, Any, Tuple, Optional
 import math
 import re
+from typing import List, Dict, Any, Tuple, Optional
 from app.core.config import settings
 from app.services.embedding_cache_service import EmbeddingCacheService
+from app.services.faiss_service import faiss_service
 
 cache_service = EmbeddingCacheService()
 
@@ -71,15 +72,18 @@ class SimilarityService:
         target_vec: List[float],
         candidate_ideas: List[Dict[str, Any]],
         idea_text: Optional[str] = None,
-        target_user_id: Optional[int] = None
+        target_user_id: Optional[int] = None,
+        exclude_idea_id: Optional[int] = None,
+        top_k: int = 5
     ) -> SimilarityResultDict:
-        cache_key_text = idea_text or str(target_vec)
+        cache_key_text = f"{idea_text or str(target_vec[:5])}:{exclude_idea_id}:{len(candidate_ideas)}"
         cached_results = cache_service.get_similarity_cache(cache_key_text)
         if cached_results is not None:
             cache_service.incr_counter("stats:sim:hits")
             if isinstance(cached_results, dict):
                 return SimilarityResultDict(cached_results)
             return SimilarityResultDict({
+                "backend_used": "cache",
                 "max_similarity": max((s.get("similarity_score", 0.0) for s in cached_results), default=0.0),
                 "similar_ideas": cached_results,
                 "recommendation": "UNIQUE"
@@ -90,13 +94,32 @@ class SimilarityService:
         high_thresh = getattr(settings, "SIMILARITY_HIGH_THRESHOLD", 0.85)
         med_thresh = getattr(settings, "SIMILARITY_MED_THRESHOLD", 0.72)
 
-        similar_ideas = []
-        for candidate in candidate_ideas:
-            cand_vec = candidate.get("embedding")
-            if not cand_vec:
-                continue
-            sim = self.cosine_similarity(target_vec, cand_vec)
+        # Execute FAISS vector search with fallback to numpy
+        search_res = faiss_service.search(
+            query_vec=target_vec,
+            top_k=top_k,
+            exclude_idea_id=exclude_idea_id,
+            candidates=candidate_ideas,
+            duplicate_threshold=high_thresh
+        )
 
+        similar_ideas = []
+        for item in search_res["similar_ideas"]:
+            cand_desc = item.get("description", "") or item.get("title", "")
+            shared_kws = self._extract_shared_keywords(
+                idea_text or "",
+                cand_desc,
+                top_n=5
+            )
+
+            cand_user_id = item.get("user_id")
+            is_same_user = bool(
+                target_user_id is not None
+                and cand_user_id is not None
+                and str(target_user_id) == str(cand_user_id)
+            )
+
+            sim = item.get("similarity_score", 0.0)
             if sim >= high_thresh:
                 overlap_level = "HIGH"
             elif sim >= med_thresh:
@@ -104,34 +127,18 @@ class SimilarityService:
             else:
                 overlap_level = "LOW"
 
-            cand_desc = candidate.get("description", "") or candidate.get("title", "")
-            shared_kws = self._extract_shared_keywords(
-                idea_text or "",
-                cand_desc,
-                top_n=5
-            )
-
-            cand_user_id = candidate.get("user_id")
-            is_same_user = bool(
-                target_user_id is not None
-                and cand_user_id is not None
-                and str(target_user_id) == str(cand_user_id)
-            )
-
-            item = {
-                "idea_id": candidate.get("id"),
-                "id": candidate.get("id"),
-                "title": candidate.get("title", ""),
-                "similarity_score": round(float(sim), 4),
+            enriched_item = {
+                "idea_id": item.get("idea_id"),
+                "id": item.get("idea_id"),
+                "title": item.get("title", ""),
+                "similarity_score": sim,
                 "overlap_level": overlap_level,
                 "category": overlap_level,
                 "shared_keywords": shared_kws,
-                "is_same_user": is_same_user
+                "is_same_user": is_same_user,
+                "is_duplicate": item.get("is_duplicate", sim >= high_thresh)
             }
-            similar_ideas.append(item)
-
-        # Sort by similarity descending
-        similar_ideas.sort(key=lambda x: x["similarity_score"], reverse=True)
+            similar_ideas.append(enriched_item)
 
         if not similar_ideas:
             recommendation = "UNIQUE"
@@ -143,8 +150,12 @@ class SimilarityService:
             recommendation = "UNIQUE"
 
         max_sim = max((s["similarity_score"] for s in similar_ideas), default=0.0)
+        has_duplicates = any(s.get("is_duplicate", False) for s in similar_ideas)
+
         res = SimilarityResultDict({
+            "backend_used": search_res.get("backend_used", "numpy"),
             "max_similarity": max_sim,
+            "has_duplicates": has_duplicates,
             "similar_ideas": similar_ideas,
             "recommendation": recommendation
         })

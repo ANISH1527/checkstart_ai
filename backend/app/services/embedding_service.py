@@ -1,5 +1,7 @@
 import json
+import os
 from typing import List, Optional
+import numpy as np
 from app.core.config import settings
 from app.core.logging import logger, struct_logger
 from app.services.embedding_cache_service import EmbeddingCacheService
@@ -9,8 +11,6 @@ EXPECTED_DIMENSION = 384
 
 _model_instance = None
 
-
-import os
 
 def get_embedding_model():
     global _model_instance
@@ -36,14 +36,28 @@ class EmbeddingService:
 
     def __init__(self, model_name: Optional[str] = None):
         self.model_name = model_name or settings.EMBEDDING_MODEL
+        self.cache_service = cache_service
 
-    def generate_embedding(self, text: str, idea_id: Optional[int] = None) -> List[float]:
+    def generate_embedding(self, text: str, idea_id: Optional[int] = None, db=None) -> List[float]:
         text_hash = cache_service.get_hash(text)
         cached_vec = cache_service.get(text)
         if cached_vec is not None and len(cached_vec) == EXPECTED_DIMENSION:
             cache_service.incr_counter("stats:emb:hits")
             struct_logger.info("embedding_cache_hit", text_hash=text_hash, idea_id=idea_id)
             return cached_vec
+
+        # Check DB idea_embeddings table for identical text_hash
+        if db is not None:
+            try:
+                from app.models.embedding import IdeaEmbedding
+                existing = db.query(IdeaEmbedding).filter(IdeaEmbedding.text_hash == text_hash).first()
+                if existing and existing.vector:
+                    vec = json.loads(existing.vector)
+                    if len(vec) == EXPECTED_DIMENSION:
+                        cache_service.set(text, vec, ttl_seconds=86400)
+                        return vec
+            except Exception as e:
+                logger.warning(f"Failed to query idea_embeddings cache: {e}")
 
         cache_service.incr_counter("stats:emb:misses")
         struct_logger.info("embedding_cache_miss", text_hash=text_hash, idea_id=idea_id)
@@ -58,15 +72,19 @@ class EmbeddingService:
         cache_service.set(text, vec, ttl_seconds=86400)
         return vec
 
-    def get_idea_embedding(self, text: str) -> List[float]:
-        return self.generate_embedding(text)
+    def get_idea_embedding(self, text: str, db=None) -> List[float]:
+        return self.generate_embedding(text, db=db)
 
     def _compute_embedding(self, text: str) -> List[float]:
         model = get_embedding_model()
         if model != "MOCK":
             try:
-                vec = model.encode(text, convert_to_numpy=True)
-                return vec.tolist()
+                vec = model.encode(text, convert_to_numpy=True, normalize_embeddings=True)
+                arr = np.array(vec, dtype=np.float32).flatten()
+                norm = float(np.linalg.norm(arr))
+                if norm > 0:
+                    arr = arr / norm
+                return arr.tolist()
             except Exception as e:
                 logger.error(f"Error generating embedding with sentence-transformers: {e}")
 
@@ -78,8 +96,11 @@ class EmbeddingService:
             pseudo_vec.append(0.1)
         pseudo_vec = pseudo_vec[:EXPECTED_DIMENSION]
 
-        norm = sum(x * x for x in pseudo_vec) ** 0.5 or 1.0
-        return [x / norm for x in pseudo_vec]
+        arr = np.array(pseudo_vec, dtype=np.float32)
+        norm = float(np.linalg.norm(arr))
+        if norm > 0:
+            arr = arr / norm
+        return arr.tolist()
 
     def serialize_embedding(self, embedding: List[float]) -> str:
         return json.dumps(embedding)

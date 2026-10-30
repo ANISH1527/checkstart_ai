@@ -23,3 +23,6 @@ def verify_access_token(token: str) -> Optional[str]:
         return user_id
     except JWTError:
         return None
+
+
+from app.utils.hashing import hash_password, verify_password, get_password_hash
