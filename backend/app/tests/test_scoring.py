@@ -85,23 +85,23 @@ def test_aggregate_to_7_parameters():
 
 
 def test_classify_all_bands():
-    exceptional = ScoringService.classify(92.5)
+    exceptional = ScoringService.classify(92.5, framework="legacy_v9")
     assert exceptional["code"] == "EXCEPTIONAL"
     assert exceptional["label"] == "Highly Promising"
 
-    strong = ScoringService.classify(78.0)
+    strong = ScoringService.classify(78.0, framework="legacy_v9")
     assert strong["code"] == "STRONG"
     assert strong["label"] == "Promising"
 
-    moderate = ScoringService.classify(65.0)
+    moderate = ScoringService.classify(65.0, framework="legacy_v9")
     assert moderate["code"] == "MODERATE"
     assert moderate["label"] == "Moderate"
 
-    weak = ScoringService.classify(45.0)
+    weak = ScoringService.classify(45.0, framework="legacy_v9")
     assert weak["code"] == "WEAK"
     assert weak["label"] == "Needs Improvement"
 
-    very_weak = ScoringService.classify(25.0)
+    very_weak = ScoringService.classify(25.0, framework="legacy_v9")
     assert very_weak["code"] == "VERY_WEAK"
     assert very_weak["label"] == "High Risk"
 

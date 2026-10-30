@@ -151,7 +151,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 
 # Configure CORS for React/Next.js frontend integration
-cors_origins_list = [origin.strip() for origin in getattr(settings, "CORS_ORIGINS", "").split(",") if origin.strip()]
+cors_origins_list = [origin.strip().rstrip('/') for origin in getattr(settings, "CORS_ORIGINS", "").split(",") if origin.strip()]
 if not cors_origins_list:
     cors_origins_list = [
         "http://localhost:5173",
