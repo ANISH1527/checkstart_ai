@@ -67,7 +67,7 @@ jobs:
       - name: Smoke-Test Critical Production Imports
         working-directory: backend
         run: |
-          python -c "import torch, psycopg2, sentence_transformers, faiss, sqlalchemy, fastapi; print('Critical production imports verified successfully.')"
+          python -c "import app.main; print('FastAPI app and production modules verified successfully.')"
 
       - name: Run Backend Unit & Rule Tests
         working-directory: backend
