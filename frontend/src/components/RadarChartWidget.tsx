@@ -9,6 +9,7 @@ import {
   Tooltip,
 } from 'recharts';
 import { ParameterScores } from '../types';
+import { normaliseScore, formatScore } from '../utils/scoreUtils';
 
 interface RadarChartWidgetProps {
   scores: ParameterScores;
@@ -19,14 +20,19 @@ export const RadarChartWidget: React.FC<RadarChartWidgetProps> = ({
   scores,
   height = 320,
 }) => {
+  const getVal = (primaryKey: string, aliasKey?: string) => {
+    const raw = (scores as any)?.[primaryKey] ?? (aliasKey ? (scores as any)?.[aliasKey] : undefined);
+    return normaliseScore(raw) ?? 5.0;
+  };
+
   const data = [
-    { subject: 'Market Demand', value: scores.marketDemand ?? 5, fullMark: 10 },
-    { subject: 'Problem Severity', value: scores.problemSeverity ?? 5, fullMark: 10 },
-    { subject: 'Competition Moat', value: scores.competition ?? 5, fullMark: 10 },
-    { subject: 'Target Customer', value: scores.targetCustomer ?? 5, fullMark: 10 },
-    { subject: 'Innovation', value: scores.innovation ?? 5, fullMark: 10 },
-    { subject: 'Feasibility', value: scores.feasibility ?? 5, fullMark: 10 },
-    { subject: 'Revenue Potential', value: scores.revenuePotential ?? 5, fullMark: 10 },
+    { subject: 'Market Demand', value: getVal('marketDemand', 'market_demand'), fullMark: 10 },
+    { subject: 'Problem Severity', value: getVal('problemSeverity', 'problem_solution_fit'), fullMark: 10 },
+    { subject: 'Competition Moat', value: getVal('competition'), fullMark: 10 },
+    { subject: 'Target Customer', value: getVal('targetCustomer', 'target_customer_clarity'), fullMark: 10 },
+    { subject: 'Innovation', value: getVal('innovation', 'uniqueness_innovation'), fullMark: 10 },
+    { subject: 'Feasibility', value: getVal('feasibility', 'technical_feasibility'), fullMark: 10 },
+    { subject: 'Revenue Potential', value: getVal('revenuePotential', 'business_potential'), fullMark: 10 },
   ];
 
   return (
@@ -44,7 +50,7 @@ export const RadarChartWidget: React.FC<RadarChartWidgetProps> = ({
             tick={{ fill: '#94a3b8', fontSize: 10 }}
           />
           <Tooltip
-            formatter={(value: any) => [`${value} / 10`, 'Score']}
+            formatter={(value: any) => [formatScore(value), 'Score']}
             contentStyle={{
               backgroundColor: '#ffffff',
               borderColor: '#e2e8f0',

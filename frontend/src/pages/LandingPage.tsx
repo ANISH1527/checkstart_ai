@@ -1,9 +1,11 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { ScoreGauge } from '../components/ScoreGauge';
 import { StatusBadge } from '../components/StatusBadge';
+import { api } from '../services/api';
+import { useTheme } from '../hooks/useTheme';
 import {
   Sparkles,
   ArrowRight,
@@ -13,15 +15,47 @@ import {
   Target,
   BarChart3,
   DollarSign,
-  FileCheck2,
   GraduationCap,
   CheckCircle,
   Lightbulb,
-  Cpu,
   Layers,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 export const LandingPage: React.FC = () => {
+  const { isDark, toggle } = useTheme();
+  const [verifying, setVerifying] = useState(false);
+  const navigate = useNavigate();
+
+  const handleGoToDashboard = async () => {
+    const token =
+      localStorage.getItem('auth_token') ||
+      localStorage.getItem('ai_validate_token');
+
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    // Verify token is still valid by calling /auth/me
+    try {
+      setVerifying(true);
+      await api.get('/auth/me');
+      // Token is valid — proceed to dashboard
+      navigate('/dashboard');
+    } catch (error) {
+      // Token is expired or invalid — clear and redirect to login
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      localStorage.removeItem('ai_validate_token');
+      localStorage.removeItem('ai_validate_user');
+      navigate('/login');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   const features = [
     {
       icon: Zap,
@@ -89,62 +123,77 @@ export const LandingPage: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col transition-colors">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white flex flex-col transition-colors">
       <Navbar />
 
       {/* Hero Section */}
-      <section className="relative pt-16 pb-20 md:pt-24 md:pb-28 overflow-hidden">
+      <section className="relative pt-16 pb-20 md:pt-24 md:pb-28 overflow-hidden bg-slate-50 dark:bg-slate-900 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto">
             {/* Student badge */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-semibold uppercase tracking-wider mb-6 animate-fade-in">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-semibold uppercase tracking-wider mb-6 animate-fade-in">
               <GraduationCap className="w-4 h-4" />
               <span>Built for Student Entrepreneurs & Campus Innovators</span>
             </div>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 leading-[1.15] mb-6">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.15] mb-6">
               Validate Your Startup Idea <br className="hidden sm:inline" />
-              <span className="text-indigo-600">
+              <span className="text-indigo-600 dark:text-indigo-400">
                 Before You Build It.
               </span>
             </h1>
 
-            <p className="text-lg sm:text-xl text-slate-600 leading-relaxed mb-10 max-w-2xl mx-auto">
+            <p className="text-lg sm:text-xl text-slate-600 dark:text-slate-300 leading-relaxed mb-10 max-w-2xl mx-auto">
               An AI-powered startup validation platform designed for students to evaluate, improve, and develop their startup ideas with a proven 7-parameter framework.
             </p>
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <button
+                type="button"
+                onClick={handleGoToDashboard}
+                disabled={verifying}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-base shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/35 transition-all hover:scale-[1.02] disabled:opacity-75 disabled:cursor-not-allowed"
+              >
+                {verifying ? (
+                  <>
+                    <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2" />
+                    Checking...
+                  </>
+                ) : (
+                  'Go to Dashboard →'
+                )}
+              </button>
               <Link
                 to="/validate"
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-base shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/35 transition-all hover:scale-[1.02]"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 font-semibold text-slate-800 dark:text-slate-200 text-base shadow-sm transition"
               >
                 <span>Validate My Idea</span>
                 <ArrowRight className="w-5 h-5" />
               </Link>
               <a
                 href="#how-it-works"
-                className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-3.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 font-semibold text-slate-800 text-base shadow-sm transition"
+                className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-3.5 rounded-xl bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800/80 font-semibold text-slate-600 dark:text-slate-300 text-base transition"
               >
                 How It Works
               </a>
             </div>
           </div>
 
-          {/* Hero Visual Mockup */}
+          {/* Hero Visual Mockup (Demo Card) */}
           <div className="mt-16 relative max-w-5xl mx-auto">
             <div className="absolute -inset-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-3xl blur-lg opacity-20" />
-            <div className="relative rounded-2xl bg-white border border-slate-200 shadow-2xl p-6 sm:p-8">
+            <div className="relative rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl p-6 sm:p-8 transition-colors">
               {/* Mockup Header */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-100 dark:border-slate-700">
                 <div>
-                  <span className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">
+                  <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
                     Interactive Live Report Demo
                   </span>
-                  <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
+                  <h3 className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1">
                     SkillMatch AI
                   </h3>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     Validated • Stanford University CS Hub
                   </p>
                 </div>
@@ -156,12 +205,12 @@ export const LandingPage: React.FC = () => {
               {/* Mockup Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 items-center">
                 {/* Score Column */}
-                <div className="flex flex-col items-center justify-center p-6 rounded-xl bg-slate-50 border border-slate-100 text-center">
+                <div className="flex flex-col items-center justify-center p-6 rounded-xl bg-slate-50 dark:bg-slate-700/50 border border-slate-100 dark:border-slate-700 text-center">
                   <ScoreGauge score={79} overallScore={7.9} size="md" />
-                  <p className="text-xs font-semibold text-slate-600 mt-2">
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mt-2">
                     Overall Validation Rating
                   </p>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-slate-400 dark:text-slate-400">
                     Weighted 7-Parameter Synthesis
                   </p>
                 </div>
@@ -169,37 +218,37 @@ export const LandingPage: React.FC = () => {
                 {/* Parameters Column */}
                 <div className="space-y-2.5">
                   <div className="flex justify-between text-xs font-semibold">
-                    <span className="text-slate-600">Market Demand (25%)</span>
-                    <span className="text-emerald-600 font-bold">8.5/10</span>
+                    <span className="text-slate-600 dark:text-slate-300">Market Demand (25%)</span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">8.5/10</span>
                   </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                  <div className="w-full bg-slate-200 dark:bg-slate-600 h-2 rounded-full overflow-hidden">
                     <div className="bg-emerald-500 h-full rounded-full w-[85%]" />
                   </div>
 
                   <div className="flex justify-between text-xs font-semibold pt-1">
-                    <span className="text-slate-600">Problem Severity (20%)</span>
-                    <span className="text-emerald-600 font-bold">8.0/10</span>
+                    <span className="text-slate-600 dark:text-slate-300">Problem Severity (20%)</span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">8.0/10</span>
                   </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                  <div className="w-full bg-slate-200 dark:bg-slate-600 h-2 rounded-full overflow-hidden">
                     <div className="bg-emerald-500 h-full rounded-full w-[80%]" />
                   </div>
 
                   <div className="flex justify-between text-xs font-semibold pt-1">
-                    <span className="text-slate-600">Competition Advantage (15%)</span>
-                    <span className="text-blue-600 font-bold">6.0/10</span>
+                    <span className="text-slate-600 dark:text-slate-300">Competition Advantage (15%)</span>
+                    <span className="text-blue-600 dark:text-blue-400 font-bold">6.0/10</span>
                   </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                  <div className="w-full bg-slate-200 dark:bg-slate-600 h-2 rounded-full overflow-hidden">
                     <div className="bg-blue-500 h-full rounded-full w-[60%]" />
                   </div>
                 </div>
 
                 {/* AI Insight Column */}
-                <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-100 text-xs space-y-2">
-                  <div className="flex items-center gap-1.5 text-indigo-700 font-bold">
+                <div className="p-4 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 text-xs space-y-2">
+                  <div className="flex items-center gap-1.5 text-indigo-700 dark:text-indigo-300 font-bold">
                     <Sparkles className="w-4 h-4" />
                     <span>AI Executive Verdict</span>
                   </div>
-                  <p className="text-slate-700 leading-relaxed">
+                  <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
                     "The startup addresses a significant problem among students and has strong revenue potential, but competition requires a stronger differentiation strategy."
                   </p>
                   <div className="pt-2">
@@ -215,39 +264,39 @@ export const LandingPage: React.FC = () => {
       </section>
 
       {/* Why Students Need This Section */}
-      <section className="py-16 bg-white border-y border-slate-200 transition-colors">
+      <section className="py-16 bg-white dark:bg-slate-800/60 border-y border-slate-200 dark:border-slate-800 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+              <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
                 The Collegiate Dilemma
               </span>
-              <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 mt-2 mb-4">
+              <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white mt-2 mb-4">
                 Why Student Founders Need Structured AI Validation
               </h2>
-              <blockquote className="text-lg text-slate-600 italic border-l-4 border-indigo-600 pl-4 mb-6">
+              <blockquote className="text-lg text-slate-600 dark:text-slate-300 italic border-l-4 border-indigo-600 dark:border-indigo-500 pl-4 mb-6">
                 "Students often have startup ideas but lack access to structured market research, business analysis, and expert guidance."
               </blockquote>
-              <p className="text-sm text-slate-600 leading-relaxed mb-6">
+              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed mb-6">
                 Many brilliant collegiate ideas fail not because of poor coding skills, but because founders jump into months of development without stress-testing problem severity, customer willingness to pay, or market saturation. AI Validate serves as your 24/7 venture analyst.
               </p>
 
               <div className="space-y-3 text-sm">
                 <div className="flex items-start gap-3">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-slate-700">
+                  <span className="text-slate-700 dark:text-slate-300">
                     Eliminate guesswork with a calibrated 7-parameter scoring algorithm.
                   </span>
                 </div>
                 <div className="flex items-start gap-3">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-slate-700">
+                  <span className="text-slate-700 dark:text-slate-300">
                     Get student-specific unit economics and campus launch strategies.
                   </span>
                 </div>
                 <div className="flex items-start gap-3">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-slate-700">
+                  <span className="text-slate-700 dark:text-slate-300">
                     Export high-res PDF validation reports to present to mentors and campus incubators.
                   </span>
                 </div>
@@ -255,42 +304,42 @@ export const LandingPage: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 shadow-sm">
-                <span className="text-3xl font-extrabold text-indigo-600">7</span>
-                <h4 className="text-base font-bold text-slate-900 mt-1">
+              <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors">
+                <span className="text-3xl font-extrabold text-indigo-600 dark:text-indigo-400">7</span>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white mt-1">
                   Core Dimensions
                 </h4>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   Weighted evaluation from Market Demand (25%) to Feasibility (10%).
                 </p>
               </div>
 
-              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 shadow-sm">
-                <span className="text-3xl font-extrabold text-emerald-600">100%</span>
-                <h4 className="text-base font-bold text-slate-900 mt-1">
+              <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors">
+                <span className="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400">100%</span>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white mt-1">
                   Objective Scoring
                 </h4>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   Backend-calculated weighted metrics ensure strict mathematical consistency.
                 </p>
               </div>
 
-              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 shadow-sm">
-                <span className="text-3xl font-extrabold text-blue-600">&lt; 30s</span>
-                <h4 className="text-base font-bold text-slate-900 mt-1">
+              <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors">
+                <span className="text-3xl font-extrabold text-blue-600 dark:text-blue-400">&lt; 30s</span>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white mt-1">
                   Rapid Analysis
                 </h4>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   Receive a complete multi-section venture report in seconds.
                 </p>
               </div>
 
-              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 shadow-sm">
-                <span className="text-3xl font-extrabold text-amber-600">PDF</span>
-                <h4 className="text-base font-bold text-slate-900 mt-1">
+              <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors">
+                <span className="text-3xl font-extrabold text-amber-600 dark:text-amber-400">PDF</span>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white mt-1">
                   Ready Export
                 </h4>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   Download printable executive reports for hackathons & investors.
                 </p>
               </div>
@@ -300,15 +349,15 @@ export const LandingPage: React.FC = () => {
       </section>
 
       {/* Features Section */}
-      <section id="features" className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section id="features" className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-slate-50 dark:bg-slate-900 transition-colors">
         <div className="text-center max-w-2xl mx-auto mb-16">
-          <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+          <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
             Platform Capabilities
           </span>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mt-2">
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-2">
             Comprehensive Startup Validation Toolkit
           </h2>
-          <p className="text-sm text-slate-500 mt-3">
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-3">
             Every analytical module you need to stress-test your value proposition from concept to launch.
           </p>
         </div>
@@ -319,15 +368,15 @@ export const LandingPage: React.FC = () => {
             return (
               <div
                 key={i}
-                className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all hover:border-indigo-300 group"
+                className="p-6 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all hover:border-indigo-300 dark:hover:border-indigo-500 group"
               >
-                <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4 group-hover:scale-110 transition">
+                <div className="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-4 group-hover:scale-110 transition">
                   <Icon className="w-5 h-5" />
                 </div>
-                <h3 className="text-base font-bold text-slate-900 mb-2">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">
                   {f.title}
                 </h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                   {f.desc}
                 </p>
               </div>
@@ -337,30 +386,33 @@ export const LandingPage: React.FC = () => {
       </section>
 
       {/* How It Works Section */}
-      <section id="how-it-works" className="py-20 bg-white border-t border-slate-200 transition-colors">
+      <section id="how-it-works" className="py-20 bg-white dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
-            <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+            <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
               Simple 4-Step Workflow
             </span>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mt-2">
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-2">
               From Raw Idea to Validated Venture
             </h2>
-            <p className="text-sm text-slate-500 mt-3">
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-3">
               Four streamlined steps to stress-test your business model before writing a single line of code.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             {steps.map((step, idx) => (
-              <div key={idx} className="relative flex flex-col items-center text-center">
-                <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white font-extrabold text-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-6">
+              <div
+                key={idx}
+                className="relative flex flex-col items-center text-center p-6 rounded-2xl bg-white dark:bg-slate-700/60 border border-slate-100 dark:border-slate-600 shadow-sm transition-colors"
+              >
+                <div className="w-16 h-16 rounded-2xl bg-indigo-600 dark:bg-indigo-500 text-white font-extrabold text-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-6">
                   {step.number}
                 </div>
-                <h3 className="text-lg font-bold text-slate-900 mb-2">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
                   {step.title}
                 </h3>
-                <p className="text-xs text-slate-600 leading-relaxed max-w-xs">
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed max-w-xs">
                   {step.desc}
                 </p>
               </div>
@@ -370,7 +422,7 @@ export const LandingPage: React.FC = () => {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 text-white relative overflow-hidden">
+      <section className="py-20 bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 dark:from-indigo-950 dark:via-indigo-900 dark:to-purple-950 text-white relative overflow-hidden transition-colors">
         <div className="max-w-4xl mx-auto px-4 text-center relative z-10">
           <Sparkles className="w-10 h-10 text-indigo-200 mx-auto mb-4 animate-bounce" />
           <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight mb-4">
@@ -379,13 +431,23 @@ export const LandingPage: React.FC = () => {
           <p className="text-base sm:text-lg text-indigo-100 max-w-2xl mx-auto mb-8">
             Join collegiate founders building the next generation of validated, sustainable tech ventures.
           </p>
-          <Link
-            to="/login"
-            className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-white text-indigo-700 hover:bg-indigo-50 font-extrabold text-base shadow-xl transition hover:scale-105"
-          >
-            <span>Get Started with Google</span>
-            <ArrowRight className="w-5 h-5" />
-          </Link>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link
+              to="/login"
+              className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-white text-indigo-700 hover:bg-indigo-50 font-extrabold text-base shadow-xl transition hover:scale-105"
+            >
+              <span>Get Started with Google</span>
+              <ArrowRight className="w-5 h-5" />
+            </Link>
+            <button
+              onClick={toggle}
+              aria-label="Toggle dark mode"
+              className="inline-flex items-center gap-2 px-5 py-4 rounded-xl bg-indigo-800/70 hover:bg-indigo-800 text-indigo-100 border border-indigo-400/30 text-sm font-semibold transition"
+            >
+              {isDark ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4 text-indigo-200" />}
+              <span>{isDark ? 'Light Mode' : 'Dark Mode'}</span>
+            </button>
+          </div>
         </div>
       </section>
 

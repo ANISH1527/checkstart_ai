@@ -5,7 +5,16 @@ class ReportService:
     def generate_markdown_report(self, validation_response: Dict[str, Any]) -> str:
         lines = []
         lines.append(f"# Startup Idea Validation Report (Version {validation_response.get('version', 1)})")
-        lines.append(f"**Overall Validation Score:** {validation_response.get('overall_score')}/100")
+        
+        ov = validation_response.get('overall_score') or validation_response.get('overallScore') or 0.0
+        try:
+            ov_float = float(ov)
+            ov_norm = round(ov_float / 10.0, 1) if ov_float > 10 else round(ov_float, 1)
+            ov_pct = round(ov_float if ov_float > 10 else ov_float * 10)
+            lines.append(f"**Overall Validation Score:** {ov_pct}% ({ov_norm:.1f}/10)")
+        except (ValueError, TypeError):
+            lines.append(f"**Overall Validation Score:** {ov}")
+
         lines.append(f"**Classification:** {validation_response.get('classification')}")
         lines.append(f"**Confidence Level:** {validation_response.get('confidence_score')}%\n")
 
@@ -18,8 +27,34 @@ class ReportService:
         else:
             scores_dict = {}
 
+        labels = {
+            "market_demand": "Market Demand",
+            "marketDemand": "Market Demand",
+            "problem_solution_fit": "Problem-Solution Fit",
+            "problemSeverity": "Problem-Solution Fit",
+            "target_customer_clarity": "Target Customer Clarity",
+            "targetCustomer": "Target Customer Clarity",
+            "competition": "Competition & Moat",
+            "uniqueness_innovation": "Uniqueness & Innovation",
+            "uniqueness": "Uniqueness & Innovation",
+            "innovation": "Uniqueness & Innovation",
+            "technical_feasibility": "Technical Feasibility",
+            "feasibility": "Technical Feasibility",
+            "business_potential": "Business Potential",
+            "revenuePotential": "Business Potential",
+            "scalability": "Scalability",
+            "risk_level": "Risk Level",
+            "risk": "Risk Level",
+        }
+
         for param, score in scores_dict.items():
-            lines.append(f"- **{str(param).replace('_', ' ').title()}:** {score}/100")
+            param_label = labels.get(param, str(param).replace('_', ' ').title())
+            try:
+                s_float = float(score)
+                s_norm = round(s_float / 10.0, 1) if s_float > 10 else round(s_float, 1)
+                lines.append(f"- **{param_label}:** {s_norm:.1f}/10")
+            except (ValueError, TypeError):
+                lines.append(f"- **{param_label}:** {score}")
 
         lines.append("\n## Actionable Recommendations")
         for rec in validation_response.get("recommendations", []):

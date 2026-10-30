@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { StartupIdea, ComparisonResult } from '../types';
 import { StatusBadge } from '../components/StatusBadge';
+import { normaliseScore, formatScore, formatOverallScore } from '../utils/scoreUtils';
 import {
   BarChart,
   Bar,
@@ -136,7 +137,7 @@ export const CompareIdeasPage: React.FC = () => {
   const barChartData = paramNames.map((p) => {
     const row: any = { parameter: p.label };
     comparisonResult?.ideas.forEach((idea) => {
-      row[idea.name] = (idea.scores as any)?.[p.key] ?? 0;
+      row[idea.name] = normaliseScore((idea.scores as any)?.[p.key]) ?? 0;
     });
     return row;
   });
@@ -153,7 +154,7 @@ export const CompareIdeasPage: React.FC = () => {
     const key = paramNames[idx].key;
     const point: any = { subject: item.subject, fullMark: 10 };
     comparisonResult?.ideas.forEach((idea) => {
-      point[idea.name] = (idea.scores as any)?.[key] ?? 0;
+      point[idea.name] = normaliseScore((idea.scores as any)?.[key]) ?? 0;
     });
     return point;
   });
@@ -250,7 +251,7 @@ export const CompareIdeasPage: React.FC = () => {
                     </td>
                     {comparisonResult.ideas.map((idea) => (
                       <td key={idea.id} className="py-3.5 px-4 font-extrabold text-base text-indigo-600 dark:text-indigo-400">
-                        {idea.scores?.validationPercentage}%
+                        {formatOverallScore(idea.scores?.validationPercentage, idea.scores?.overallScore)}
                         <div className="mt-1">
                           <StatusBadge category={idea.scores?.validationCategory || 'Promising'} size="sm" />
                         </div>
@@ -265,10 +266,11 @@ export const CompareIdeasPage: React.FC = () => {
                         {param.label}
                       </td>
                       {comparisonResult.ideas.map((idea) => {
-                        const score = (idea.scores as any)?.[param.key] ?? 0;
+                        const raw = (idea.scores as any)?.[param.key] ?? 0;
+                        const score = normaliseScore(raw) ?? 0;
                         return (
                           <td key={idea.id} className="py-3 px-4 font-bold text-slate-900 dark:text-dark-text">
-                            {score.toFixed(1)} / 10
+                            {formatScore(score)}
                           </td>
                         );
                       })}
@@ -308,7 +310,7 @@ export const CompareIdeasPage: React.FC = () => {
                     <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" opacity={0.4} />
                     <XAxis type="number" domain={[0, 10]} tick={{ fontSize: 10 }} />
                     <YAxis dataKey="parameter" type="category" tick={{ fontSize: 10, fill: '#64748b' }} width={110} />
-                    <Tooltip />
+                    <Tooltip formatter={(value: any) => [formatScore(value), 'Score']} />
                     <Legend wrapperStyle={{ fontSize: '11px' }} />
                     {comparisonResult.ideas.map((idea, i) => (
                       <Bar
@@ -334,7 +336,7 @@ export const CompareIdeasPage: React.FC = () => {
                     <PolarGrid stroke="#cbd5e1" opacity={0.5} />
                     <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 10 }} />
                     <PolarRadiusAxis angle={30} domain={[0, 10]} tick={{ fontSize: 9 }} />
-                    <Tooltip />
+                    <Tooltip formatter={(value: any) => [formatScore(value), 'Score']} />
                     <Legend wrapperStyle={{ fontSize: '11px' }} />
                     {comparisonResult.ideas.map((idea, i) => (
                       <Radar

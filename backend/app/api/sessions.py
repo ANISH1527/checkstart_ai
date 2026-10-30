@@ -51,7 +51,7 @@ def list_sessions(
 ):
     chat_service = ChatService(db)
     sessions = chat_service.list_user_sessions(current_user.id)
-    return {"conversations": sessions, "sessions": sessions}
+    return {"conversations": sessions, "sessions": sessions, "items": sessions}
 
 
 @router.get("/sessions/{session_id}")

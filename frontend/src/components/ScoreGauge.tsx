@@ -1,8 +1,9 @@
 import React from 'react';
+import { normaliseScore } from '../utils/scoreUtils';
 
 interface ScoreGaugeProps {
   score: number; // 0 - 100
-  overallScore?: number; // 1.0 - 10.0
+  overallScore?: number; // 1.0 - 10.0 or 0 - 100
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -76,9 +77,9 @@ export const ScoreGauge: React.FC<ScoreGaugeProps> = ({
           {boundedScore.toFixed(0)}
           <span className="text-sm font-semibold opacity-70">/100</span>
         </span>
-        {overallScore !== undefined && (
+        {overallScore !== undefined && overallScore !== null && (
           <span className="text-xs font-medium text-slate-500 dark:text-dark-muted">
-            {overallScore.toFixed(1)} / 10
+            {(normaliseScore(overallScore) ?? 0).toFixed(1)} / 10
           </span>
         )}
       </div>

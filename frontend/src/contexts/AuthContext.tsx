@@ -20,28 +20,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const initAuth = async () => {
-      const storedToken = localStorage.getItem('ai_validate_token');
-      if (storedToken) {
-        setToken(storedToken);
-        try {
-          const res = await api.getMe();
-          setUser(res.user);
-        } catch (error) {
-          console.warn('Session expired or invalid token:', error);
-          localStorage.removeItem('ai_validate_token');
-          localStorage.removeItem('ai_validate_user');
-          setToken(null);
-          setUser(null);
-        }
+    const restoreSession = async () => {
+      const storedToken =
+        localStorage.getItem('auth_token') ||
+        localStorage.getItem('ai_validate_token');
+
+      if (!storedToken) {
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      setToken(storedToken);
+      try {
+        // Validate token with backend on every app load
+        const res = await api.get('/auth/me');
+        const currentUser = res?.user || res;
+        setUser(currentUser);
+        setToken(storedToken);
+      } catch (error) {
+        console.warn('Session expired or invalid token:', error);
+        // Token invalid or expired — clear everything
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+        localStorage.removeItem('ai_validate_token');
+        localStorage.removeItem('ai_validate_user');
+        setToken(null);
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    initAuth();
+    restoreSession();
   }, []);
 
   const login = (newToken: string, newUser: User) => {
+    localStorage.setItem('auth_token', newToken);
+    localStorage.setItem('auth_user', JSON.stringify(newUser));
     localStorage.setItem('ai_validate_token', newToken);
     localStorage.setItem('ai_validate_user', JSON.stringify(newUser));
     setToken(newToken);
@@ -54,6 +69,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {
       // ignore
     } finally {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
       localStorage.removeItem('ai_validate_token');
       localStorage.removeItem('ai_validate_user');
       setToken(null);
@@ -63,6 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateUser = (updatedUser: User) => {
     setUser(updatedUser);
+    localStorage.setItem('auth_user', JSON.stringify(updatedUser));
     localStorage.setItem('ai_validate_user', JSON.stringify(updatedUser));
   };
 

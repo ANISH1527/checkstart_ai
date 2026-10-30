@@ -26,10 +26,10 @@ export const ProtectedRoute: React.FC = () => {
   const isFullHeight = location.pathname.startsWith('/validate');
 
   return (
-    <div className="flex flex-col md:flex-row h-screen w-full bg-[#F8FAFC] dark:bg-dark-bg text-slate-900 dark:text-dark-text transition-colors overflow-hidden">
+    <div className="flex flex-col md:flex-row h-screen w-full bg-[#F8FAFC] dark:bg-slate-900 text-slate-900 dark:text-white transition-colors overflow-hidden">
       <Sidebar />
       <main
-        className={`flex-1 min-w-0 h-full flex flex-col ${
+        className={`flex-1 min-w-0 h-full flex flex-col bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white ${
           isFullHeight
             ? 'overflow-hidden p-0'
             : 'overflow-y-auto p-4 sm:p-6 lg:p-8'

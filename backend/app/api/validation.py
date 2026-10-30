@@ -50,7 +50,14 @@ def validate_idea(
         db.commit()
         db.refresh(job)
 
-    return SuccessResponse(data={"job_id": task.id, "status": job.status})
+    val_repo = ValidationRepository(db)
+    latest_val = val_repo.get_latest_validation(idea.id)
+    resp_data = {"job_id": task.id, "status": job.status}
+    if latest_val:
+        from app.api.reports import format_validation_report
+        resp_data["report"] = format_validation_report(latest_val, idea, db)
+
+    return SuccessResponse(data=resp_data)
 
 
 @router.post("/{idea_id}/revalidate")
@@ -84,7 +91,14 @@ def revalidate_idea(
         db.commit()
         db.refresh(job)
 
-    return SuccessResponse(data={"job_id": task.id, "status": job.status})
+    val_repo = ValidationRepository(db)
+    latest_val = val_repo.get_latest_validation(idea.id)
+    resp_data = {"job_id": task.id, "status": job.status}
+    if latest_val:
+        from app.api.reports import format_validation_report
+        resp_data["report"] = format_validation_report(latest_val, idea, db)
+
+    return SuccessResponse(data=resp_data)
 
 
 @router.get("/{idea_id}/validation/status")

@@ -9,6 +9,13 @@ import {
 } from '../types';
 import { ChatHistorySidebar } from '../components/ChatHistorySidebar';
 import { SafeMarkdown } from '../components/SafeMarkdown';
+import {
+  normaliseScore,
+  formatScore,
+  scoreToPercent,
+  formatOverallScore,
+  getParamLabel,
+} from '../utils/scoreUtils';
 
 import {
   Sparkles,
@@ -122,7 +129,7 @@ export const NewValidationPage: React.FC = () => {
       const userConvs = res.conversations || [];
       setConversations(userConvs);
 
-      const urlConvId = searchParams.get('conversationId');
+      const urlConvId = searchParams.get('conversationId') || searchParams.get('session');
 
       if (urlConvId && userConvs.some((c) => c.id === urlConvId)) {
         // 1. URL has a valid conversation ID belonging to the user
@@ -644,7 +651,7 @@ export const NewValidationPage: React.FC = () => {
                                   {meta.validationPercentage || Math.round(meta.overallScore * 10)}%
                                 </span>
                                 <span className="text-xs text-slate-500 dark:text-dark-muted font-medium">
-                                  ({meta.overallScore}/10 Overall Viability)
+                                  ({(normaliseScore(meta.overallScore) ?? (meta.validationPercentage ? meta.validationPercentage / 10 : 0)).toFixed(1)}/10 Overall Viability)
                                 </span>
                               </div>
                               {meta.delta !== null && meta.delta !== undefined && meta.delta !== 0 && (
@@ -665,9 +672,12 @@ export const NewValidationPage: React.FC = () => {
                                   7-Parameter Viability Breakdown:
                                 </p>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                  {Object.entries(meta.scores).map(([key, val]) => {
-                                    const numVal = typeof val === 'number' ? val : parseFloat(String(val)) || 0;
-                                    const pct = Math.min(Math.max(numVal * 10, 0), 100);
+                                {Object.entries(meta.scores).map(([key, val]) => {
+                                    // normaliseScore auto-detects scale:
+                                    //   values > 10  → treated as 0-100 → divided by 10 (old DB records)
+                                    //   values ≤ 10  → already 0-10    → used as-is (new records)
+                                    const score = normaliseScore(val as number) ?? 0;
+                                    const pct   = scoreToPercent(score);
                                     return (
                                       <div
                                         key={key}
@@ -675,10 +685,10 @@ export const NewValidationPage: React.FC = () => {
                                       >
                                         <div className="flex justify-between items-center mb-1">
                                           <span className="font-semibold text-slate-700 dark:text-dark-muted text-[11px]">
-                                            {PARAM_LABELS[key] || key}
+                                            {getParamLabel(key)}
                                           </span>
                                           <span className="font-bold text-indigo-600 dark:text-indigo-400 text-[11px]">
-                                            {numVal}/10
+                                            {formatScore(score)}
                                           </span>
                                         </div>
                                         <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-dark-border overflow-hidden">

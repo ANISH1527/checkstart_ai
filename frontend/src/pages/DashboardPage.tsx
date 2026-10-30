@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { DashboardStats } from '../types';
+import { formatOverallScore } from '../utils/scoreUtils';
 import { ScoreGauge } from '../components/ScoreGauge';
 import { StatusBadge } from '../components/StatusBadge';
 import { ScoreHistoryChart } from '../components/ScoreHistoryChart';
@@ -285,7 +286,7 @@ export const DashboardPage: React.FC = () => {
                       {item.industry}
                     </td>
                     <td className="py-4 px-4 font-extrabold text-indigo-600 dark:text-indigo-400">
-                      {item.score}%
+                      {formatOverallScore(item.score)}
                     </td>
                     <td className="py-4 px-4">
                       <StatusBadge category={item.category} size="sm" />

@@ -49,6 +49,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       root.classList.add('light');
       root.classList.remove('dark');
     }
+    localStorage.setItem('theme', theme);
     localStorage.setItem('ai_validate_theme', theme);
   }, [theme]);
 
@@ -59,7 +60,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
-    const token = localStorage.getItem('ai_validate_token');
+    const token = localStorage.getItem('ai_validate_token') || localStorage.getItem('auth_token');
     if (token) {
       api.updateSettings({ theme: newTheme }).catch(() => {});
     }
@@ -67,7 +68,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme, isDark: theme === 'dark', toggle: toggleTheme } as any}>
       {children}
     </ThemeContext.Provider>
   );

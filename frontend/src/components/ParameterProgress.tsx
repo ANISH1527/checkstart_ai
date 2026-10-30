@@ -1,5 +1,6 @@
 import React from 'react';
 import { ParameterScores } from '../types';
+import { normaliseScore, formatScore, scoreToPercent } from '../utils/scoreUtils';
 import {
   TrendingUp,
   AlertCircle,
@@ -74,8 +75,19 @@ const PARAMETERS: ParamMeta[] = [
   },
 ];
 
+const PARAM_KEY_ALIASES: Record<string, string> = {
+  marketDemand: 'market_demand',
+  problemSeverity: 'problem_solution_fit',
+  competition: 'competition',
+  targetCustomer: 'target_customer_clarity',
+  innovation: 'uniqueness_innovation',
+  feasibility: 'technical_feasibility',
+  revenuePotential: 'business_potential',
+};
+
 export const ParameterProgress: React.FC<ParameterProgressProps> = ({ scores }) => {
   const getScoreColor = (score: number) => {
+    // score is guaranteed 0-10 here
     if (score >= 8.0) return 'bg-emerald-500 text-emerald-600';
     if (score >= 6.0) return 'bg-blue-500 text-blue-600';
     if (score >= 4.0) return 'bg-amber-500 text-amber-600';
@@ -85,8 +97,11 @@ export const ParameterProgress: React.FC<ParameterProgressProps> = ({ scores }) 
   return (
     <div className="space-y-4">
       {PARAMETERS.map((param) => {
-        const val = scores[param.key] ?? 5.0;
-        const percentage = Math.min(100, Math.max(0, val * 10));
+        const alias = PARAM_KEY_ALIASES[param.key];
+        const raw = scores[param.key] ?? (alias ? (scores as any)[alias] : undefined) ?? 5.0;
+        // normaliseScore auto-converts 0-100 → 0-10 for backward compatibility
+        const val = normaliseScore(raw) ?? 5.0;
+        const percentage = scoreToPercent(val);
         const colorClass = getScoreColor(val);
         const Icon = param.icon;
 
@@ -117,8 +132,7 @@ export const ParameterProgress: React.FC<ParameterProgressProps> = ({ scores }) 
 
               <div className="text-right flex-shrink-0">
                 <span className={`text-base font-bold ${colorClass.split(' ')[1]}`}>
-                  {val.toFixed(1)}
-                  <span className="text-xs font-normal text-slate-400 dark:text-slate-500">/10</span>
+                  {formatScore(val)}
                 </span>
               </div>
             </div>

@@ -477,41 +477,6 @@ def compare_idea_versions(
     })
 
 
-@router.post("/{idea_id}/validate")
-def validate_idea_endpoint(
-    idea_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Validate a startup idea, enforcing tenant ownership.
-    Returns 404 for ideas belonging to another user.
-    """
-    idea_repo = IdeaRepository(db)
-    idea = idea_repo.get_by_id_and_user(idea_id, current_user.id)
-    if not idea:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Startup idea not found or access denied."
-        )
-
-    val_service = ValidationService(db)
-    pipeline_res = val_service.run_validation_pipeline(idea)
-
-    val_id = pipeline_res.get("validation_id")
-    val = db.query(ValidationResult).filter(ValidationResult.id == val_id).first()
-    if not val:
-        raise HTTPException(status_code=500, detail="Validation execution completed but result record not found.")
-
-    from app.api.reports import format_validation_report
-    report_payload = format_validation_report(val, idea, db)
-    return SuccessResponse(data={
-        "report": report_payload,
-        **report_payload,
-        "message": "Validation analysis completed successfully."
-    })
-
-
 class ChatMessageRequest(BaseModel):
     message: str
     content: Optional[str] = None

@@ -1,35 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
-import { StartupIdea, VersionReportItem } from '../types';
+import { VersionReportItem } from '../types';
 import { StatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
 import { EmptyState } from '../components/EmptyState';
+import { IdeaCard, IdeaCardItem } from '../components/IdeaCard';
+import { formatOverallScore } from '../utils/scoreUtils';
 import {
   Search,
   PlusCircle,
   Trash2,
-  ExternalLink,
   Calendar,
-  Building,
   Sparkles,
   LayoutGrid,
   List,
   Loader2,
-  AlertCircle,
   ArrowUpDown,
   Filter,
   MessageSquare,
   History,
-  TrendingUp,
-  ArrowRight,
   Clock,
 } from 'lucide-react';
 
 export const MyIdeasPage: React.FC = () => {
   const navigate = useNavigate();
 
-  const [ideas, setIdeas] = useState<StartupIdea[]>([]);
+  const [ideas, setIdeas] = useState<IdeaCardItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
@@ -38,21 +35,288 @@ export const MyIdeasPage: React.FC = () => {
 
   // Delete modal state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [selectedIdeaForDelete, setSelectedIdeaForDelete] = useState<StartupIdea | null>(null);
+  const [selectedIdeaForDelete, setSelectedIdeaForDelete] = useState<IdeaCardItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Version History Modal state
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
-  const [selectedIdeaForHistory, setSelectedIdeaForHistory] = useState<StartupIdea | null>(null);
+  const [selectedIdeaForHistory, setSelectedIdeaForHistory] = useState<IdeaCardItem | null>(null);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [versionReports, setVersionReports] = useState<VersionReportItem[]>([]);
 
   const fetchIdeas = async () => {
     try {
       setLoading(true);
-      const res = await api.getIdeas({ search, category, sort });
-      setIdeas(res.ideas);
+      setError(null);
+
+      // STEP 3: Call BOTH /ideas and /sessions and merge results
+      const [ideasRes, sessionsRes] = await Promise.allSettled([
+        api.get('/ideas'),
+        api.get('/sessions'),
+      ]);
+
+      const rawIdeas =
+        ideasRes.status === 'fulfilled'
+          ? ideasRes.value?.items ||
+            ideasRes.value?.ideas ||
+            (Array.isArray(ideasRes.value) ? ideasRes.value : [])
+          : [];
+      const rawSessions =
+        sessionsRes.status === 'fulfilled'
+          ? sessionsRes.value?.items ||
+            sessionsRes.value?.sessions ||
+            sessionsRes.value?.conversations ||
+            (Array.isArray(sessionsRes.value) ? sessionsRes.value : [])
+          : [];
+
+      // Debug logging (STEP 3 CASE C)
+      console.log('My Ideas API response:', { ideas: rawIdeas, sessions: rawSessions });
+
+      const ideasList: any[] = Array.isArray(rawIdeas) ? rawIdeas : [];
+      const sessionsList: any[] = Array.isArray(rawSessions) ? rawSessions : [];
+
+      // Deduplicate: collect existing idea IDs and conversation IDs
+      const existingIdeaIds = new Set(ideasList.map((i: any) => String(i.id)));
+      const existingConvIds = new Set(
+        ideasList.map((i: any) => String(i.conversationId || '')).filter(Boolean)
+      );
+
+      const mappedIdeas: IdeaCardItem[] = ideasList.map((i: any) => {
+        const rawScore =
+          i.latestReport?.overallScore ?? i.overall_score ?? i.score;
+        const scoreNum =
+          rawScore !== null && rawScore !== undefined && !isNaN(Number(rawScore))
+            ? Number(rawScore)
+            : null;
+        const scorePercent =
+          scoreNum !== null
+            ? scoreNum <= 10 && scoreNum > 0
+              ? Math.round(scoreNum * 10)
+              : Math.round(scoreNum)
+            : i.latestReport?.validationPercentage ?? null;
+
+        return {
+          ...i,
+          source: 'idea' as const,
+          overall_score: scoreNum,
+          score: scoreNum,
+          scoreDisplay: scorePercent !== null ? `${scorePercent}%` : null,
+          classification: i.latestReport?.validationCategory || i.classification || null,
+        };
+      });
+
+      const mappedSessions: IdeaCardItem[] = sessionsList
+        .filter((s: any) => {
+          // Include sessions that have validation results, scores, extracted info, or messages
+          const hasScore =
+            s.validation_result ||
+            (s.overall_score !== null && s.overall_score !== undefined) ||
+            (s.latestScore !== null && s.latestScore !== undefined) ||
+            s.latestReport;
+          const hasTitle =
+            s.title &&
+            s.title !== 'New Startup Idea' &&
+            s.title !== 'Untitled Idea';
+          const hasProblem =
+            s.extracted_context?.problemStatement ||
+            s.extracted_context?.problem;
+          const hasMessages =
+            s.lastMessage || (s.reportsCount && s.reportsCount > 0);
+          return hasScore || hasTitle || hasProblem || hasMessages;
+        })
+        .filter((s: any) => {
+          // Deduplicate if already present as an idea
+          if (s.ideaId && existingIdeaIds.has(String(s.ideaId))) return false;
+          if (s.idea_id && existingIdeaIds.has(String(s.idea_id))) return false;
+          if (existingConvIds.has(String(s.id))) return false;
+          if (existingIdeaIds.has(String(s.id))) return false;
+          return true;
+        })
+        .map((s: any) => {
+          const valRes = s.validation_result;
+          const rawScore =
+            valRes?.overall_score ??
+            s.overall_score ??
+            s.latestScore ??
+            s.latestReport?.overallScore;
+          const scoreNum =
+            rawScore !== null && rawScore !== undefined && !isNaN(Number(rawScore))
+              ? Number(rawScore)
+              : null;
+          const scorePercent =
+            scoreNum !== null
+              ? scoreNum <= 10 && scoreNum > 0
+                ? Math.round(scoreNum * 10)
+                : Math.round(scoreNum)
+              : null;
+
+          const classification =
+            valRes?.classification ||
+            s.classification ||
+            s.latestReport?.validationCategory ||
+            (scorePercent !== null
+              ? scorePercent >= 80
+                ? 'Highly Promising'
+                : scorePercent >= 60
+                ? 'Promising'
+                : scorePercent >= 40
+                ? 'Needs Improvement'
+                : 'High Risk'
+              : null);
+
+          const title =
+            s.title &&
+            s.title !== 'New Startup Idea' &&
+            s.title !== 'Untitled Idea'
+              ? s.title
+              : s.extracted_context?.startupName ||
+                s.extracted_context?.problem?.slice(0, 60) ||
+                s.extracted_context?.problemStatement?.slice(0, 60) ||
+                s.title ||
+                'Untitled Idea';
+
+          const problem =
+            s.extracted_context?.problemStatement ||
+            s.extracted_context?.problem ||
+            s.lastMessage ||
+            '';
+          const industry =
+            s.extracted_context?.industry || 'Technology';
+
+          return {
+            id: s.id,
+            name: title,
+            title: title,
+            description: problem || 'Interactive chat validation concept.',
+            problemStatement: problem,
+            proposedSolution:
+              s.extracted_context?.proposedSolution ||
+              s.extracted_context?.solution ||
+              '',
+            targetCustomer: s.extracted_context?.targetCustomer || '',
+            industry: industry,
+            location: 'Global',
+            businessModel:
+              s.extracted_context?.revenueModel ||
+              s.extracted_context?.businessModel ||
+              '',
+            revenueModel: s.extracted_context?.revenueModel || '',
+            currentStage:
+              s.status === 'completed' ? 'Validated' : 'Chat Session',
+            overall_score: scoreNum,
+            score: scoreNum,
+            scoreDisplay: scorePercent !== null ? `${scorePercent}%` : null,
+            classification: classification,
+            createdAt: s.created_at || s.createdAt || new Date().toISOString(),
+            created_at: s.created_at || s.createdAt || new Date().toISOString(),
+            updatedAt:
+              s.updated_at || s.updatedAt || s.created_at || s.createdAt,
+            version: s.version || s.reportsCount || 1,
+            reportsCount:
+              s.reportsCount || (valRes || scoreNum !== null ? 1 : 0),
+            isValidated: !!(valRes || scoreNum !== null),
+            is_validated: !!(valRes || scoreNum !== null),
+            conversationId: s.id,
+            sessionId: s.id,
+            source: 'session' as const,
+            latestReport:
+              valRes || scoreNum !== null
+                ? {
+                    id: valRes?.report_id || valRes?.id || s.id,
+                    versionNumber: s.version || s.reportsCount || 1,
+                    overallScore: scoreNum ?? 0,
+                    validationPercentage: scorePercent ?? 0,
+                    validationCategory: classification || 'Needs Improvement',
+                    summary: valRes?.summary || '',
+                    createdAt:
+                      s.created_at || s.createdAt || new Date().toISOString(),
+                  }
+                : null,
+          };
+        });
+
+      let allItems = [...mappedIdeas, ...mappedSessions];
+
+      // Client-side search
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        allItems = allItems.filter(
+          (i: any) =>
+            (i.name && i.name.toLowerCase().includes(q)) ||
+            (i.title && i.title.toLowerCase().includes(q)) ||
+            (i.description && i.description.toLowerCase().includes(q)) ||
+            (i.problemStatement && i.problemStatement.toLowerCase().includes(q)) ||
+            (i.industry && i.industry.toLowerCase().includes(q))
+        );
+      }
+
+      // Category filter
+      if (category && category !== 'All') {
+        allItems = allItems.filter((i: any) => {
+          const repCategory =
+            i.classification || i.latestReport?.validationCategory;
+          return (
+            repCategory === category ||
+            (i.industry &&
+              i.industry.toLowerCase().includes(category.toLowerCase()))
+          );
+        });
+      }
+
+      // Sort
+      if (sort === 'highest-score') {
+        allItems.sort((a: any, b: any) => {
+          const sa =
+            a.latestReport?.validationPercentage ??
+            (a.scoreDisplay
+              ? parseInt(a.scoreDisplay)
+              : a.overall_score
+              ? a.overall_score * 10
+              : 0);
+          const sb =
+            b.latestReport?.validationPercentage ??
+            (b.scoreDisplay
+              ? parseInt(b.scoreDisplay)
+              : b.overall_score
+              ? b.overall_score * 10
+              : 0);
+          return sb - sa;
+        });
+      } else if (sort === 'lowest-score') {
+        allItems.sort((a: any, b: any) => {
+          const sa =
+            a.latestReport?.validationPercentage ??
+            (a.scoreDisplay
+              ? parseInt(a.scoreDisplay)
+              : a.overall_score
+              ? a.overall_score * 10
+              : 0);
+          const sb =
+            b.latestReport?.validationPercentage ??
+            (b.scoreDisplay
+              ? parseInt(b.scoreDisplay)
+              : b.overall_score
+              ? b.overall_score * 10
+              : 0);
+          return sa - sb;
+        });
+      } else if (sort === 'oldest') {
+        allItems.sort(
+          (a: any, b: any) =>
+            new Date(a.createdAt || a.created_at).getTime() -
+            new Date(b.createdAt || b.created_at).getTime()
+        );
+      } else {
+        // newest
+        allItems.sort(
+          (a: any, b: any) =>
+            new Date(b.createdAt || b.created_at).getTime() -
+            new Date(a.createdAt || a.created_at).getTime()
+        );
+      }
+
+      setIdeas(allItems);
     } catch (err: any) {
       console.error('Failed to load ideas:', err);
       setError(err.message || 'Unable to load your startup ideas.');
@@ -69,7 +333,18 @@ export const MyIdeasPage: React.FC = () => {
     if (!selectedIdeaForDelete) return;
     try {
       setDeleting(true);
-      await api.deleteIdea(selectedIdeaForDelete.id);
+      if (selectedIdeaForDelete.source === 'session') {
+        await api.deleteConversation(String(selectedIdeaForDelete.id));
+      } else {
+        await api.deleteIdea(String(selectedIdeaForDelete.id));
+        if (selectedIdeaForDelete.conversationId) {
+          try {
+            await api.deleteConversation(String(selectedIdeaForDelete.conversationId));
+          } catch {
+            // ignore if conversation already deleted
+          }
+        }
+      }
       setDeleteModalOpen(false);
       setSelectedIdeaForDelete(null);
       fetchIdeas();
@@ -81,17 +356,65 @@ export const MyIdeasPage: React.FC = () => {
     }
   };
 
-  const handleOpenVersionHistory = async (idea: StartupIdea) => {
+  const handleOpenVersionHistory = async (idea: IdeaCardItem) => {
     setSelectedIdeaForHistory(idea);
     setHistoryModalOpen(true);
     setVersionsLoading(true);
 
     try {
-      const res = await api.getIdeaReports(idea.id);
-      setVersionReports(res.reports || []);
+      if (idea.source === 'session' && idea.latestReport) {
+        setVersionReports([
+          {
+            id: idea.latestReport.id,
+            versionNumber: idea.latestReport.versionNumber || 1,
+            overallScore: idea.latestReport.overallScore,
+            validationPercentage: idea.latestReport.validationPercentage,
+            validationCategory: idea.latestReport.validationCategory,
+            summary: idea.latestReport.summary || '',
+            recommendedAction: 'Continue chatting to iterate on your score.',
+            createdAt: idea.latestReport.createdAt || new Date().toISOString(),
+            scores: {
+              marketDemand: 7,
+              problemSeverity: 7,
+              competition: 6,
+              targetCustomer: 7,
+              innovation: 7,
+              feasibility: 8,
+              revenuePotential: 7,
+            },
+          },
+        ]);
+      } else {
+        const res = await api.getIdeaReports(String(idea.id));
+        setVersionReports(res.reports || []);
+      }
     } catch (err) {
       console.error('Failed to fetch idea reports:', err);
-      setVersionReports([]);
+      if (idea.latestReport) {
+        setVersionReports([
+          {
+            id: idea.latestReport.id,
+            versionNumber: idea.latestReport.versionNumber || 1,
+            overallScore: idea.latestReport.overallScore,
+            validationPercentage: idea.latestReport.validationPercentage,
+            validationCategory: idea.latestReport.validationCategory,
+            summary: idea.latestReport.summary || '',
+            recommendedAction: 'Continue chatting to iterate on your score.',
+            createdAt: idea.latestReport.createdAt || new Date().toISOString(),
+            scores: {
+              marketDemand: 7,
+              problemSeverity: 7,
+              competition: 6,
+              targetCustomer: 7,
+              innovation: 7,
+              feasibility: 8,
+              revenuePotential: 7,
+            },
+          },
+        ]);
+      } else {
+        setVersionReports([]);
+      }
     } finally {
       setVersionsLoading(false);
     }
@@ -175,6 +498,7 @@ export const MyIdeasPage: React.FC = () => {
                   ? 'bg-white dark:bg-dark-card text-indigo-600 dark:text-indigo-400 shadow-sm'
                   : 'text-slate-400 hover:text-slate-700 dark:hover:text-dark-text'
               }`}
+              title="Grid View"
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
@@ -185,6 +509,7 @@ export const MyIdeasPage: React.FC = () => {
                   ? 'bg-white dark:bg-dark-card text-indigo-600 dark:text-indigo-400 shadow-sm'
                   : 'text-slate-400 hover:text-slate-700 dark:hover:text-dark-text'
               }`}
+              title="Table View"
             >
               <List className="w-4 h-4" />
             </button>
@@ -192,12 +517,39 @@ export const MyIdeasPage: React.FC = () => {
         </div>
       </div>
 
+      {/* STEP 5: Loading Skeleton (3 pulse cards) while fetching */}
       {loading ? (
-        <div className="min-h-[40vh] flex flex-col items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-2" />
-          <p className="text-xs text-slate-500 dark:text-dark-muted">Retrieving ideas...</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3].map((n) => (
+            <div
+              key={n}
+              className="p-6 rounded-3xl bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm animate-pulse space-y-4"
+            >
+              <div className="flex justify-between items-center">
+                <div className="h-4 bg-slate-200 dark:bg-dark-border rounded w-24"></div>
+                <div className="h-5 bg-slate-200 dark:bg-dark-border rounded-full w-20"></div>
+              </div>
+              <div className="h-6 bg-slate-200 dark:bg-dark-border rounded w-3/4"></div>
+              <div className="space-y-2">
+                <div className="h-3 bg-slate-200 dark:bg-dark-border rounded w-full"></div>
+                <div className="h-3 bg-slate-200 dark:bg-dark-border rounded w-5/6"></div>
+              </div>
+              <div className="pt-4 border-t border-slate-100 dark:border-dark-border flex justify-between items-end">
+                <div className="space-y-1">
+                  <div className="h-3 bg-slate-200 dark:bg-dark-border rounded w-10"></div>
+                  <div className="h-7 bg-slate-200 dark:bg-dark-border rounded w-16"></div>
+                </div>
+                <div className="h-4 bg-slate-200 dark:bg-dark-border rounded w-20"></div>
+              </div>
+              <div className="pt-2 flex gap-2">
+                <div className="h-9 bg-slate-200 dark:bg-dark-border rounded-xl flex-1"></div>
+                <div className="h-9 bg-slate-200 dark:bg-dark-border rounded-xl w-24"></div>
+              </div>
+            </div>
+          ))}
         </div>
       ) : ideas.length === 0 ? (
+        /* Only show EmptyState if merged array is truly empty after both calls resolve */
         <EmptyState
           title="No startup ideas found."
           description={
@@ -209,124 +561,19 @@ export const MyIdeasPage: React.FC = () => {
           actionHref="/validate"
         />
       ) : viewMode === 'grid' ? (
-        /* Grid View */
+        /* STEP 4: Grid View with IdeaCard component handling both sources */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {ideas.map((idea) => {
-            const report = idea.latestReport;
-            const reportsCount = idea.reportsCount || 0;
-
-            return (
-              <div
-                key={idea.id}
-                className="p-6 rounded-3xl bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
-                      {idea.industry}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      {reportsCount > 1 && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                          v{report?.versionNumber || reportsCount}
-                        </span>
-                      )}
-                      {report && <StatusBadge category={report.validationCategory} size="sm" />}
-                    </div>
-                  </div>
-
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-dark-text line-clamp-1">
-                    {idea.name}
-                  </h3>
-
-                  <p className="text-xs text-slate-500 dark:text-dark-muted line-clamp-2 mt-1.5 leading-relaxed">
-                    {idea.description}
-                  </p>
-                </div>
-
-                {/* Score & Meta */}
-                <div className="pt-4 border-t border-slate-100 dark:border-dark-border space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500">Score</p>
-                      <p className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400">
-                        {report ? `${report.validationPercentage}%` : 'Pending'}
-                      </p>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500 flex items-center gap-1 justify-end">
-                        <Calendar className="w-3 h-3" />
-                        <span>{new Date(idea.updatedAt || idea.createdAt).toLocaleDateString()}</span>
-                      </p>
-                      <p className="text-[11px] text-slate-500 dark:text-dark-muted font-medium">
-                        {reportsCount > 0
-                          ? `${reportsCount} ${reportsCount === 1 ? 'version' : 'versions'}`
-                          : idea.currentStage}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Actions: Continue Conversation, View Latest, Version History */}
-                  <div className="space-y-2 pt-2">
-                    <div className="flex items-center gap-2">
-                      {/* 1. Continue Conversation */}
-                      <Link
-                        to={
-                          idea.conversationId
-                            ? `/validate?conversationId=${idea.conversationId}`
-                            : '/validate'
-                        }
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm transition"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        <span>Continue Chat</span>
-                      </Link>
-
-                      {/* 2. View Latest Report */}
-                      {report && (
-                        <Link
-                          to={`/report/${report.id}`}
-                          className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-dark-input hover:bg-slate-200 dark:hover:bg-dark-hover text-slate-700 dark:text-dark-text font-bold text-xs transition"
-                          title="View Latest Report"
-                        >
-                          <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                          <span>Report</span>
-                        </Link>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between gap-2">
-                      {/* 3. View Version History */}
-                      {reportsCount > 0 ? (
-                        <button
-                          onClick={() => handleOpenVersionHistory(idea)}
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl border border-slate-200 dark:border-dark-border hover:bg-slate-50 dark:hover:bg-dark-hover text-slate-600 dark:text-dark-muted text-xs font-semibold transition"
-                        >
-                          <History className="w-3 h-3" />
-                          <span>Version History ({reportsCount})</span>
-                        </button>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 dark:text-slate-500 italic">Not validated yet</span>
-                      )}
-
-                      {/* 4. Delete */}
-                      <button
-                        onClick={() => {
-                          setSelectedIdeaForDelete(idea);
-                          setDeleteModalOpen(true);
-                        }}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition"
-                        title="Delete idea"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {ideas.map((idea) => (
+            <IdeaCard
+              key={idea.id}
+              idea={idea}
+              onOpenHistory={handleOpenVersionHistory}
+              onDelete={(i) => {
+                setSelectedIdeaForDelete(i);
+                setDeleteModalOpen(true);
+              }}
+            />
+          ))}
         </div>
       ) : (
         /* Table View */
@@ -345,27 +592,94 @@ export const MyIdeasPage: React.FC = () => {
             <tbody className="divide-y divide-slate-100 dark:divide-dark-border">
               {ideas.map((idea) => {
                 const report = idea.latestReport;
+                const rawScore =
+                  idea.overall_score ?? idea.score ?? report?.overallScore;
+                const scorePercent =
+                  report?.validationPercentage ??
+                  (rawScore !== null && rawScore !== undefined && !isNaN(Number(rawScore))
+                    ? Number(rawScore) <= 10 && Number(rawScore) > 0
+                      ? Math.round(Number(rawScore) * 10)
+                      : Math.round(Number(rawScore))
+                    : null);
+
+                const classification =
+                  idea.classification ||
+                  report?.validationCategory ||
+                  (scorePercent !== null
+                    ? scorePercent >= 80
+                      ? 'Highly Promising'
+                      : scorePercent >= 60
+                      ? 'Promising'
+                      : scorePercent >= 40
+                      ? 'Needs Improvement'
+                      : 'High Risk'
+                    : null);
+
+                const isSession = idea.source === 'session';
+                const reportHref = isSession
+                  ? `/validate-idea?session=${idea.id}`
+                  : report?.id
+                  ? `/report/${report.id}`
+                  : `/ideas/${idea.id}/report`;
+
+                const chatHref = isSession
+                  ? `/validate-idea?session=${idea.id}`
+                  : idea.conversationId
+                  ? `/validate?conversationId=${idea.conversationId}`
+                  : '/validate';
+
+                const title =
+                  idea.title ||
+                  idea.name ||
+                  idea.extracted_context?.startupName ||
+                  'Untitled Idea';
+                const problemDesc =
+                  idea.problemStatement ||
+                  idea.description ||
+                  idea.extracted_context?.problemStatement ||
+                  '';
+
                 return (
-                  <tr key={idea.id} className="hover:bg-slate-50/70 dark:hover:bg-dark-hover/60 transition">
+                  <tr
+                    key={idea.id}
+                    className="hover:bg-slate-50/70 dark:hover:bg-dark-hover/60 transition"
+                  >
                     <td className="py-4 px-6">
-                      <p className="font-bold text-slate-900 dark:text-dark-text text-sm">{idea.name}</p>
-                      <p className="text-[11px] text-slate-400 dark:text-dark-muted truncate max-w-xs">{idea.problemStatement}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-slate-900 dark:text-dark-text text-sm">
+                          {title}
+                        </p>
+                        {isSession && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-violet-50 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-800">
+                            Chat
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 dark:text-dark-muted truncate max-w-xs mt-0.5">
+                        {problemDesc}
+                      </p>
                     </td>
-                    <td className="py-4 px-6 text-slate-600 dark:text-dark-muted">{idea.industry}</td>
+                    <td className="py-4 px-6 text-slate-600 dark:text-dark-muted">
+                      {idea.industry || 'Technology'}
+                    </td>
                     <td className="py-4 px-6">
-                      {report ? (
+                      {scorePercent !== null ? (
                         <span className="font-extrabold text-indigo-600 dark:text-indigo-400 text-sm">
-                          {report.validationPercentage}%
+                          {formatOverallScore(scorePercent, rawScore)}
                         </span>
                       ) : (
-                        <span className="text-slate-400 dark:text-slate-500">Pending</span>
+                        <span className="text-slate-400 dark:text-slate-500">
+                          Pending
+                        </span>
                       )}
                     </td>
                     <td className="py-4 px-6">
-                      {report ? (
-                        <StatusBadge category={report.validationCategory} size="sm" />
+                      {classification ? (
+                        <StatusBadge category={classification as any} size="sm" />
                       ) : (
-                        <span className="text-slate-400 dark:text-slate-500 text-[11px]">Unanalyzed</span>
+                        <span className="text-slate-400 dark:text-slate-500 text-[11px]">
+                          Unanalyzed
+                        </span>
                       )}
                     </td>
                     <td className="py-4 px-6">
@@ -375,7 +689,9 @@ export const MyIdeasPage: React.FC = () => {
                           className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
                         >
                           <History className="w-3 h-3" />
-                          <span>v{report?.versionNumber || idea.reportsCount} ({idea.reportsCount})</span>
+                          <span>
+                            v{report?.versionNumber || idea.version || idea.reportsCount} ({idea.reportsCount})
+                          </span>
                         </button>
                       ) : (
                         <span className="text-slate-400 dark:text-slate-500">-</span>
@@ -384,20 +700,16 @@ export const MyIdeasPage: React.FC = () => {
                     <td className="py-4 px-6 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <Link
-                          to={
-                            idea.conversationId
-                              ? `/validate?conversationId=${idea.conversationId}`
-                              : '/validate'
-                          }
+                          to={chatHref}
                           className="p-2 rounded-xl text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 transition"
                           title="Continue Chat"
                         >
                           <MessageSquare className="w-4 h-4" />
                         </Link>
 
-                        {report && (
+                        {(scorePercent !== null || report || isSession) && (
                           <Link
-                            to={`/report/${report.id}`}
+                            to={reportHref}
                             className="p-2 rounded-xl text-slate-600 dark:text-dark-muted hover:bg-slate-100 dark:hover:bg-dark-hover transition"
                             title="View Report"
                           >
@@ -433,7 +745,7 @@ export const MyIdeasPage: React.FC = () => {
           setSelectedIdeaForHistory(null);
           setVersionReports([]);
         }}
-        title={`Validation History — ${selectedIdeaForHistory?.name || 'Startup'}`}
+        title={`Validation History — ${selectedIdeaForHistory?.title || selectedIdeaForHistory?.name || 'Startup'}`}
       >
         <div className="space-y-4">
           <p className="text-xs text-slate-500 dark:text-dark-muted">
@@ -480,7 +792,7 @@ export const MyIdeasPage: React.FC = () => {
 
                   <div className="flex items-center gap-3">
                     <span className="text-base font-extrabold text-indigo-600 dark:text-indigo-400">
-                      {v.validationPercentage}%
+                      {formatOverallScore(v.validationPercentage, v.overallScore)}
                     </span>
                     <button
                       onClick={() => {
@@ -518,7 +830,7 @@ export const MyIdeasPage: React.FC = () => {
           <p className="text-xs text-slate-600 dark:text-dark-muted leading-relaxed">
             Are you sure you want to permanently delete{' '}
             <span className="font-bold text-slate-900 dark:text-dark-text">
-              {selectedIdeaForDelete?.name}
+              {selectedIdeaForDelete?.title || selectedIdeaForDelete?.name}
             </span>
             ? All associated validation reports, history versions, and AI analyses will be removed.
           </p>

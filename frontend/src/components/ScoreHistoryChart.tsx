@@ -10,6 +10,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { DashboardStats } from '../types';
+import { formatOverallScore } from '../utils/scoreUtils';
 
 interface ScoreHistoryChartProps {
   data: DashboardStats['scoreHistory'];
@@ -57,7 +58,7 @@ export const ScoreHistoryChart: React.FC<ScoreHistoryChartProps> = ({
                   <div className="bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border text-slate-900 dark:text-dark-text px-3 py-2 rounded-xl shadow-lg text-xs">
                     <p className="font-semibold text-slate-800 dark:text-slate-200">{item.fullName}</p>
                     <p className="text-indigo-600 dark:text-indigo-400 font-bold mt-0.5">
-                      Score: {item.score}%
+                      Score: {formatOverallScore(item.score)}
                     </p>
                     <p className="text-slate-500 dark:text-dark-muted text-[11px]">
                       Category: {item.category}
