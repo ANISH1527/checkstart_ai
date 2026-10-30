@@ -1,4 +1,6 @@
+import re
 from typing import Dict, Any, List, Optional
+from datetime import datetime
 
 
 class OverrideItem(dict):
@@ -40,12 +42,14 @@ class VerificationService:
         llm_scores: Optional[Dict[str, Any]] = None,
         profile: Any = None,
         evidence_results: Optional[List[Dict[str, Any]]] = None,
+        similarity_results: Optional[List[Dict[str, Any]]] = None,
         idea_id: Optional[int] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
         Deterministic, rule-based verification layer (Layer 8).
         Intercepts and calibrates LLM scores against deterministic checks and domain heuristics.
+        Classifies LLM claims into FACT, INFERENCE, ASSUMPTION, or UNKNOWN.
         """
         user_data = user_input or {}
         prof = profile if profile is not None else idea_profile
@@ -61,23 +65,26 @@ class VerificationService:
             if evidence_results is not None
             else (evidence_list if evidence_list is not None else user_data.get("evidence", []))
         )
+        sim_items = similarity_results or []
 
-        # Normalize LLM score keys to snake_case backend format (Step 3)
+        # Canonical key map covering both 7-parameter report_v1 and 9-dimension legacy_v9
         KEY_MAP = {
             "marketDemand":          "market_demand",
+            "problemSeverity":       "problem_severity",
             "problemSolutionFit":    "problem_solution_fit",
+            "targetCustomer":        "target_customer",
             "targetCustomerClarity": "target_customer_clarity",
             "competition":           "competition",
+            "competitionAdvantage":  "competition",
+            "innovation":            "innovation",
             "uniquenessInnovation":  "uniqueness_innovation",
+            "uniqueness":            "uniqueness_innovation",
+            "feasibility":           "feasibility",
             "technicalFeasibility":  "technical_feasibility",
+            "revenuePotential":      "revenue_potential",
             "businessPotential":     "business_potential",
             "scalability":           "scalability",
             "riskLevel":             "risk_level",
-            # Variations
-            "problem_solution_fit":  "problem_solution_fit",
-            "market_demand":         "market_demand",
-            "business_potential":    "business_potential",
-            "uniqueness":            "uniqueness_innovation",
             "risk":                  "risk_level",
         }
 
@@ -92,38 +99,58 @@ class VerificationService:
 
         verified_scores = normalized_scores
 
-        def get_score(param: str, default: float = 50.0) -> float:
-            val = verified_scores.get(param)
-            if val is None:
-                if param == "uniqueness_innovation":
-                    val = verified_scores.get("uniqueness")
-                elif param == "uniqueness":
-                    val = verified_scores.get("uniqueness_innovation")
-                elif param == "risk_level":
-                    val = verified_scores.get("risk")
-                elif param == "risk":
-                    val = verified_scores.get("risk_level")
-            if val is None:
-                return default
-            if isinstance(val, dict):
-                try:
-                    return float(val.get("score", default))
-                except (ValueError, TypeError):
-                    return default
-            try:
-                return float(val)
-            except (ValueError, TypeError):
-                return default
+        def get_score(param: str, default: float = 5.0) -> float:
+            aliases = [param]
+            if param == "problem_severity":
+                aliases.append("problem_solution_fit")
+            elif param == "problem_solution_fit":
+                aliases.append("problem_severity")
+            elif param == "target_customer":
+                aliases.append("target_customer_clarity")
+            elif param == "target_customer_clarity":
+                aliases.append("target_customer")
+            elif param in ("innovation", "uniqueness", "uniqueness_innovation"):
+                aliases.extend(["innovation", "uniqueness", "uniqueness_innovation"])
+            elif param in ("feasibility", "technical_feasibility"):
+                aliases.extend(["feasibility", "technical_feasibility"])
+            elif param in ("revenue_potential", "business_potential"):
+                aliases.extend(["revenue_potential", "business_potential"])
 
-        def set_score(param: str, new_val: float):
-            val = float(new_val)
-            keys_to_set = [param]
-            if param in ("uniqueness_innovation", "uniqueness"):
-                keys_to_set = ["uniqueness_innovation", "uniqueness"]
-            elif param in ("risk_level", "risk"):
-                keys_to_set = ["risk_level", "risk"]
+            for a in aliases:
+                val = verified_scores.get(a)
+                if val is not None:
+                    if isinstance(val, dict):
+                        try:
+                            return float(val.get("score", default))
+                        except (ValueError, TypeError):
+                            return default
+                    try:
+                        return float(val)
+                    except (ValueError, TypeError):
+                        return default
+            return default
 
-            for k in keys_to_set:
+        def set_score(param: str, new_val_10: float, new_val_100: float):
+            """Sets score for both 1.0-10.0 scale and 0.0-100.0 scale keys."""
+            alias_map = {
+                "revenue_potential": ["revenue_potential", "business_potential"],
+                "business_potential": ["revenue_potential", "business_potential"],
+                "target_customer": ["target_customer", "target_customer_clarity"],
+                "target_customer_clarity": ["target_customer", "target_customer_clarity"],
+                "problem_severity": ["problem_severity", "problem_solution_fit"],
+                "problem_solution_fit": ["problem_severity", "problem_solution_fit"],
+                "innovation": ["innovation", "uniqueness", "uniqueness_innovation"],
+                "uniqueness_innovation": ["innovation", "uniqueness", "uniqueness_innovation"],
+                "feasibility": ["feasibility", "technical_feasibility"],
+                "technical_feasibility": ["feasibility", "technical_feasibility"],
+                "competition": ["competition", "competition_advantage", "competitionAdvantage"],
+                "market_demand": ["market_demand", "marketDemand"],
+            }
+            keys = alias_map.get(param, [param])
+            for k in keys:
+                curr = get_score(k, 5.0)
+                is_10_scale = curr <= 10.0
+                val = new_val_10 if is_10_scale else new_val_100
                 if isinstance(verified_scores.get(k), dict):
                     verified_scores[k]["score"] = val
                 else:
@@ -132,42 +159,43 @@ class VerificationService:
         overrides_applied = []
         issues = []
 
-        revenue = (
-            getattr(prof, "revenue_model", "")
-            or getattr(prof, "business_model", "")
-            or user_data.get("revenue_model", "")
-            or user_data.get("business_model", "")
-            or ""
-        )
         description = (
-            getattr(prof, "description", "")
-            or user_data.get("description", "")
+            user_data.get("description", "")
+            or getattr(prof, "description", "")
             or ""
         )
         title = (
-            getattr(prof, "title", "")
-            or user_data.get("title", "")
+            user_data.get("title", "")
+            or getattr(prof, "title", "")
             or ""
         )
         customer = (
-            getattr(prof, "target_customer", "")
-            or user_data.get("target_customer", "")
+            user_data.get("target_customer", "")
+            or getattr(prof, "target_customer", "")
             or ""
         )
         full_text = f"{title} {description}".strip()
 
         # ---------------------------------------------------------
         # RULE 1 — Revenue model missing & explicit no revenue
+        # Spec: no revenue model -> revenue_potential <= 4.5
         # ---------------------------------------------------------
         revenue_keywords = [
             "subscription", "revenue", "charge", "pricing", "fee",
             "payment", "earn", "monetize", "business model", "per month",
-            "per user", "rs ", "₹", "$"
+            "per user", "rs ", "₹", "$", "commission", "freemium"
         ]
-        has_revenue_signal = (
-            len(str(revenue).strip()) > 5 or
-            any(kw in full_text.lower() for kw in revenue_keywords)
+
+        neg_revenue_regex = re.compile(
+            r'\b(no|without|zero|lack of)\s+(any\s+)?(pricing|revenue|charge|fee|business model|monetization)\b',
+            re.IGNORECASE
         )
+        cleaned_rev_text = neg_revenue_regex.sub("", full_text.lower())
+
+        raw_user_rev = (user_data.get("revenue_model") or user_data.get("business_model") or user_data.get("pricing") or "").strip()
+        has_user_rev = len(raw_user_rev) > 2 and raw_user_rev.lower() not in ["none", "n/a", "no", "not specified"]
+        has_text_rev = any(kw in cleaned_rev_text for kw in revenue_keywords)
+        has_revenue_signal = has_user_rev or has_text_rev
 
         no_revenue_signals = [
             "no business plan", "no revenue", "no monetization",
@@ -178,45 +206,54 @@ class VerificationService:
             sig in full_text.lower() for sig in no_revenue_signals
         )
 
-        orig_bp = get_score("business_potential", 50.0)
+        orig_rev = get_score("revenue_potential", get_score("business_potential", 50.0))
         if explicitly_no_revenue:
-            verified_scores["business_potential"] = 10.0
-            set_score("business_potential", 10.0)
+            new_rev_10 = 1.0
+            new_rev_100 = 10.0
+            set_score("revenue_potential", new_rev_10, new_rev_100)
             flag = "explicit_no_revenue_model_score_zeroed"
-            overrides_applied.append(OverrideItem(flag, "business_potential", orig_bp, 10.0))
+            overrides_applied.append(OverrideItem(flag, "revenue_potential", orig_rev, new_rev_10 if orig_rev <= 10 else new_rev_100))
             issues.append(flag)
         elif not has_revenue_signal:
-            if orig_bp > 45.0:
-                verified_scores["business_potential"] = 45.0
-                set_score("business_potential", 45.0)
+            orig_val = orig_rev
+            if orig_val > 4.5:
+                new_rev_10 = 4.5
+                new_rev_100 = 45.0
+                set_score("revenue_potential", new_rev_10, new_rev_100)
                 flag = "revenue_model_missing_score_capped"
-                overrides_applied.append(OverrideItem(flag, "business_potential", orig_bp, 45.0))
+                overrides_applied.append(OverrideItem(flag, "revenue_potential", orig_val, new_rev_10 if orig_val <= 10 else new_rev_100))
+                overrides_applied.append(OverrideItem(flag, "business_potential", orig_val if orig_val > 10 else orig_val * 10, new_rev_100))
                 issues.append(flag)
 
         # ---------------------------------------------------------
         # RULE 2 — No target customer & vague target customer
+        # Spec: target "everyone"/vague -> target_customer <= 4.0
         # ---------------------------------------------------------
         vague_customer_signals = [
             "everyone", "all people", "anybody", "no target",
-            "general public", "whole world", "all customers"
+            "general public", "whole world", "all customers",
+            "all college students", "everyone in"
         ]
         explicitly_no_customer = any(
             sig in f"{customer} {full_text}".lower()
             for sig in vague_customer_signals
         )
         if explicitly_no_customer or len(str(customer).strip()) < 20:
-            orig_tc = get_score("target_customer_clarity", 100.0)
-            new_tc = min(orig_tc, 25.0)
-            verified_scores["target_customer_clarity"] = new_tc
-            set_score("target_customer_clarity", new_tc)
+            orig_tc = get_score("target_customer", get_score("target_customer_clarity", 10.0))
+            is_ten_scale = orig_tc <= 10.0
+            new_tc_10 = min(orig_tc if is_ten_scale else orig_tc / 10.0, 4.0)
+            new_tc_100 = min(orig_tc * 10.0 if is_ten_scale else orig_tc, 25.0)
+
+            set_score("target_customer", new_tc_10, new_tc_100)
             flag = "no_target_customer_score_capped"
-            overrides_applied.append(OverrideItem(flag, "target_customer_clarity", orig_tc, new_tc))
-            if len(str(customer).strip()) < 20 or not customer:
-                overrides_applied.append(OverrideItem("customer_vague_score_capped", "target_customer_clarity", orig_tc, new_tc))
+            overrides_applied.append(OverrideItem(flag, "target_customer", orig_tc, new_tc_10 if is_ten_scale else new_tc_100))
+            overrides_applied.append(OverrideItem("customer_vague_score_capped", "target_customer", orig_tc, new_tc_10 if is_ten_scale else new_tc_100))
+            overrides_applied.append(OverrideItem(flag, "target_customer_clarity", orig_tc * 10 if is_ten_scale else orig_tc, new_tc_100))
             issues.append(flag)
 
         # ---------------------------------------------------------
         # RULE 3 — Nonsensical or fraudulent product signals
+        # Spec: impossible/fraud -> all params <= 2.0
         # ---------------------------------------------------------
         fraud_signals = [
             "invisible", "magic", "guaranteed crore", "earn crore in",
@@ -224,13 +261,13 @@ class VerificationService:
         ]
         has_fraud_signal = any(sig in full_text.lower() for sig in fraud_signals)
         if has_fraud_signal:
-            for param in ["market_demand", "problem_solution_fit",
-                          "business_potential", "uniqueness_innovation"]:
-                orig_p = get_score(param, 100.0)
-                new_p = min(orig_p, 15.0)
-                verified_scores[param] = new_p
-                set_score(param, new_p)
+            all_params_7 = ["market_demand", "problem_severity", "competition", "target_customer", "innovation", "feasibility", "revenue_potential"]
+            all_params_9 = ["market_demand", "problem_solution_fit", "target_customer_clarity", "competition", "uniqueness_innovation", "technical_feasibility", "business_potential", "scalability", "risk_level"]
+            for param in set(all_params_7 + all_params_9):
+                orig_p = get_score(param, 10.0)
+                set_score(param, 2.0, 15.0)
             flag = "fraudulent_product_signal_detected"
+            overrides_applied.append(OverrideItem(flag, "multiple", 0.0, 2.0))
             overrides_applied.append(OverrideItem(flag, "multiple", 0.0, 15.0))
             issues.append(flag)
 
@@ -242,22 +279,17 @@ class VerificationService:
             "no marketing", "i will not market", "without marketing"
         ]
         if any(sig in full_text.lower() for sig in anti_market_signals):
-            orig_md = get_score("market_demand", 100.0)
-            new_md = min(orig_md, 20.0)
-            verified_scores["market_demand"] = new_md
-            set_score("market_demand", new_md)
-
-            orig_bp = get_score("business_potential", 100.0)
-            new_bp = min(orig_bp, 20.0)
-            verified_scores["business_potential"] = new_bp
-            set_score("business_potential", new_bp)
-
+            orig_md = get_score("market_demand", 10.0)
+            orig_bp = get_score("revenue_potential", get_score("business_potential", 10.0))
+            set_score("market_demand", 2.0, 20.0)
+            set_score("revenue_potential", 2.0, 20.0)
+            set_score("business_potential", 2.0, 20.0)
             flag = "explicit_anti_marketing_statement"
             overrides_applied.append(OverrideItem(flag, "market_demand_business_potential", 0.0, 20.0))
             issues.append(flag)
 
         # ---------------------------------------------------------
-        # Score vs rule engine findings (deterministic cross-check)
+        # Rule engine findings cross-check
         # ---------------------------------------------------------
         critical_violations = []
         for violation in rule_res:
@@ -271,53 +303,112 @@ class VerificationService:
 
             if severity == "CRITICAL":
                 critical_violations.append(rule_name)
-                if affected_param and affected_param in verified_scores:
+                if affected_param and (affected_param in verified_scores or affected_param in KEY_MAP):
                     curr_score = get_score(affected_param)
-                    if curr_score > 60:
-                        new_score = min(curr_score, 40.0)
-                        set_score(affected_param, new_score)
-                        verified_scores[affected_param] = new_score
+                    if curr_score > 6.0:
+                        set_score(affected_param, 4.0, 40.0)
                         flag = f"critical_rule_violation_{rule_name}"
-                        overrides_applied.append(OverrideItem(flag, affected_param, curr_score, new_score))
-                        issues.append(flag)
-
-            elif severity == "HIGH":
-                if affected_param and affected_param in verified_scores:
-                    curr_score = get_score(affected_param)
-                    if curr_score > 70:
-                        new_score = min(curr_score, 55.0)
-                        set_score(affected_param, new_score)
-                        verified_scores[affected_param] = new_score
-                        flag = f"high_rule_violation_{rule_name}"
-                        overrides_applied.append(OverrideItem(flag, affected_param, curr_score, new_score))
+                        overrides_applied.append(OverrideItem(flag, affected_param, curr_score, 4.0 if curr_score <= 10 else 40.0))
                         issues.append(flag)
 
         # ---------------------------------------------------------
-        # Score vs evidence availability
+        # Evidence Availability check
         # ---------------------------------------------------------
         if len(evidence_items) == 0:
             md_score = get_score("market_demand")
-            if md_score > 60:
-                set_score("market_demand", 50.0)
-                verified_scores["market_demand"] = 50.0
+            if md_score > 6.0:
+                set_score("market_demand", 5.0, 50.0)
                 flag = "no_evidence_market_demand_capped"
-                overrides_applied.append(OverrideItem(flag, "market_demand", md_score, 50.0))
-                issues.append(flag)
-        elif all(
-            (e.get("reliability") if isinstance(e, dict) else getattr(e, "reliability", None)) == "GENERATED"
-            for e in evidence_items
-        ):
-            md_score = get_score("market_demand")
-            if md_score > 65:
-                set_score("market_demand", 55.0)
-                verified_scores["market_demand"] = 55.0
-                flag = "only_generated_evidence_score_capped"
-                overrides_applied.append(OverrideItem(flag, "market_demand", md_score, 55.0))
+                overrides_applied.append(OverrideItem(flag, "market_demand", md_score, 5.0 if md_score <= 10 else 50.0))
                 issues.append(flag)
 
         # ---------------------------------------------------------
-        # Confidence score calibration
+        # PHASE 2: Layer 8 Claim Verification Taxonomy
+        # Classify each claim as FACT, INFERENCE, ASSUMPTION, or UNKNOWN
+        # FACT only if supported by retrieved evidence (Layer 6 benchmark or competitor match)
         # ---------------------------------------------------------
+        verified_claims = []
+        raw_claims = []
+
+        if isinstance(llm_output, dict):
+            if "claims" in llm_output and isinstance(llm_output["claims"], list):
+                raw_claims.extend(llm_output["claims"])
+            for section in ["strengths", "weaknesses"]:
+                for item in llm_output.get(section, []):
+                    if isinstance(item, str) and len(item.strip()) > 10:
+                        raw_claims.append({"claim": item, "category": section.upper()})
+
+        if title:
+            raw_claims.append({"claim": f"{title}: {description[:120]}...", "category": "SOLUTION_CONCEPT"})
+        if customer:
+            raw_claims.append({"claim": f"Target Customer Segment: {customer}", "category": "TARGET_CUSTOMER"})
+        if raw_user_rev:
+            raw_claims.append({"claim": f"Monetization Structure: {raw_user_rev}", "category": "BUSINESS_MODEL"})
+
+        STOP_WORDS = {
+            "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "with",
+            "of", "from", "by", "as", "is", "are", "was", "were", "will", "be",
+            "all", "across", "it", "this", "that", "our", "we", "they", "their",
+            "student", "students", "app", "platform", "user", "need"
+        }
+
+        for c in raw_claims:
+            claim_text = c.get("claim", str(c)) if isinstance(c, dict) else str(c)
+            cat = c.get("category", "GENERAL") if isinstance(c, dict) else "GENERAL"
+
+            # Check match in retrieved Layer 6 evidence
+            matched_evidence = None
+            claim_sig_words = {w.strip('.,;:"!?') for w in claim_text.lower().split() if len(w) > 3 and w not in STOP_WORDS}
+            for ev in evidence_items:
+                ev_claim = (ev.get("claim") or ev.get("evidence_summary") or "").lower()
+                ev_sig_words = {w.strip('.,;:"!?') for w in ev_claim.split() if len(w) > 3 and w not in STOP_WORDS}
+                if len(claim_sig_words.intersection(ev_sig_words)) >= 2:
+                    matched_evidence = ev
+                    break
+
+            # Check match in competitors
+            matched_competitor = None
+            for comp in sim_items:
+                comp_title = (comp.get("title") or comp.get("name") or "").lower()
+                if comp_title and comp_title in claim_text.lower():
+                    matched_competitor = comp
+                    break
+
+            if matched_evidence:
+                claim_class = "FACT"
+                source_label = f"{matched_evidence.get('source_name', 'Layer 6 Benchmark')} ({matched_evidence.get('retrieval_date', 'Retrieved')})"
+                reliability = "VERIFIED"
+            elif matched_competitor:
+                claim_class = "FACT"
+                source_label = f"Competitor Benchmark: {matched_competitor.get('title', 'Market Incumbent')}"
+                reliability = "VERIFIED"
+            elif any(k in claim_text.lower() for k in ["guarantee", "100%", "viral", "zero marketing", "billion", "crore in one", "monopoly", "everyone will buy"]):
+                claim_class = "ASSUMPTION"
+                source_label = "Unverified Growth Hypothesis (Requires Interviews)"
+                reliability = "UNVERIFIED"
+            elif len(claim_text.strip()) < 15:
+                claim_class = "UNKNOWN"
+                source_label = "Insufficient Specification"
+                reliability = "UNKNOWN"
+            elif any(k in claim_text.lower() for k in ["for students", "dorm", "campus", "built for", "our solution", "we are building", "undergraduate"]):
+                claim_class = "INFERENCE"
+                source_label = "Founder Pitch Input (Inferred Persona)"
+                reliability = "ESTIMATED"
+            else:
+                claim_class = "INFERENCE"
+                source_label = "Logical Domain Deduction"
+                reliability = "ESTIMATED"
+
+            verified_claims.append({
+                "claim": claim_text,
+                "category": cat,
+                "claim_class": claim_class,
+                "evidence_source": source_label,
+                "reliability": reliability,
+                "verified_at": datetime.utcnow().isoformat()
+            })
+
+        # Confidence calibration bounded to 10% - 95%
         confidence = 85.0
         if len(overrides_applied) > 0:
             confidence -= 15.0
@@ -338,6 +429,7 @@ class VerificationService:
             "verified_scores": verified_scores,
             "overrides_applied": overrides_applied,
             "score_overrides": overrides_applied,
+            "verified_claims": verified_claims,
             "calibrated_confidence": calibrated_confidence,
             "issues": issues,
             "passed": is_passed,

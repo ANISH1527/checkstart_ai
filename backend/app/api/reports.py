@@ -109,6 +109,18 @@ def format_validation_report(val: ValidationResult, idea: Idea, db: Session) -> 
         ),
         "risks": formatted_risks,
         "recommendations": recommendations,
+        "verifiedClaims": analysis_data.get("verified_claims", []),
+        "scoreOverrides": analysis_data.get("score_overrides", val.score_overrides or []),
+        "evidenceSources": [
+            {
+                "sourceName": e.source_name,
+                "sourceUrl": e.source_url,
+                "claim": e.claim,
+                "reliability": e.reliability,
+                "retrievedAt": e.retrieved_at.isoformat() if e.retrieved_at else None,
+            }
+            for e in val.evidence
+        ],
         "finalVerdict": val.strategic_verdict or val.summary or "Viable venture concept with clear next validation milestones.",
         "recommendedAction": val.recommended_action or "Begin target user problem-interview phase."
     }

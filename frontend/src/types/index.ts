@@ -18,6 +18,31 @@ export interface RiskItem {
   mitigation: string;
 }
 
+export interface VerifiedClaimItem {
+  claim: string;
+  category?: string;
+  claim_class: 'FACT' | 'INFERENCE' | 'ASSUMPTION' | 'UNKNOWN';
+  evidence_source?: string;
+  reliability?: string;
+  verified_at?: string;
+}
+
+export interface ScoreOverrideItem {
+  reason: string;
+  parameter?: string;
+  original_score?: number;
+  new_score?: number;
+}
+
+export interface EvidenceSourceItem {
+  sourceName: string;
+  sourceUrl?: string;
+  claim?: string;
+  reliability?: string;
+  retrievedAt?: string;
+  origin?: string;
+}
+
 export interface ReportAnalysisData {
   strengths: string[];
   weaknesses: string[];
@@ -29,6 +54,9 @@ export interface ReportAnalysisData {
   revenueAnalysis: string;
   risks: RiskItem[];
   recommendations: string[];
+  verifiedClaims?: VerifiedClaimItem[];
+  scoreOverrides?: ScoreOverrideItem[];
+  evidenceSources?: EvidenceSourceItem[];
   finalVerdict: string;
   recommendedAction: string;
 }
