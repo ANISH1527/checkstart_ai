@@ -37,9 +37,13 @@ async def lifespan(app: FastAPI):
         logger.error(f"Startup DB check failed: {e}")
 
     redis_ok = True
-    if getattr(settings, "REDIS_URL", None):
+    raw_redis_url = getattr(settings, "REDIS_URL", None)
+    if raw_redis_url and raw_redis_url.strip():
         try:
-            r = redis.Redis.from_url(settings.REDIS_URL, socket_timeout=2)
+            r_kwargs = {"socket_timeout": 2, "socket_connect_timeout": 2}
+            if raw_redis_url.startswith("rediss://"):
+                r_kwargs["ssl_cert_reqs"] = None
+            r = redis.Redis.from_url(raw_redis_url.strip(), **r_kwargs)
             r.ping()
             logger.info("Startup Redis PING check succeeded.")
         except Exception as e:
@@ -184,8 +188,18 @@ def health_check():
     redis_status = "ok"
     try:
         import redis
-        r = redis.Redis.from_url(getattr(settings, "REDIS_URL", "redis://localhost:6379/0"), socket_timeout=1)
-        r.ping()
+        raw_redis_url = getattr(settings, "REDIS_URL", "").strip()
+        if not raw_redis_url:
+            redis_status = "unconfigured"
+        elif settings.is_production and raw_redis_url == "redis://localhost:6379/0":
+            redis_status = "unconfigured"
+        else:
+            r_kwargs = {"socket_timeout": 2, "socket_connect_timeout": 2}
+            if raw_redis_url.startswith("rediss://"):
+                r_kwargs["ssl_cert_reqs"] = None
+            r = redis.Redis.from_url(raw_redis_url, **r_kwargs)
+            r.ping()
+            redis_status = "ok"
     except Exception:
         redis_status = "error"
 

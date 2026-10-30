@@ -35,11 +35,13 @@ def check_backend_health(client: httpx.Client, backend_url: str, retries: int, d
                 print(f"[BACKEND] Response: {data}")
                 status = data.get("data", {}).get("status")
                 db_status = data.get("data", {}).get("db")
+                redis_status = data.get("data", {}).get("redis")
+                llm_status = data.get("data", {}).get("llm_api")
                 if status == "ok" and db_status == "ok":
-                    print("[BACKEND] SUCCESS: Backend server and Database are healthy.")
+                    print(f"[BACKEND] SUCCESS: Backend server and Database healthy. (Redis: {redis_status}, LLM: {llm_status})")
                     return True
                 else:
-                    print(f"[BACKEND] WARNING: Service returned status={status}, db={db_status}")
+                    print(f"[BACKEND] WARNING: Service status={status}, db={db_status}, redis={redis_status}, llm={llm_status}")
             else:
                 print(f"[BACKEND] Attempt {attempt}/{retries}: Received status {res.status_code}")
         except Exception as e:

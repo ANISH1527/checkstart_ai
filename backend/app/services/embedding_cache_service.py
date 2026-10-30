@@ -24,11 +24,13 @@ class EmbeddingCacheService:
             return None
         if self._redis_client is None and self.redis_url:
             try:
+                r_kwargs = {"socket_timeout": 2.0, "socket_connect_timeout": 2.0}
+                if self.redis_url.startswith("rediss://"):
+                    r_kwargs["ssl_cert_reqs"] = None
                 self._redis_client = redis.Redis.from_url(
                     self.redis_url,
                     decode_responses=True,
-                    socket_connect_timeout=0.2,
-                    socket_timeout=0.2
+                    **r_kwargs
                 )
                 # Quick ping to verify connectivity
                 self._redis_client.ping()

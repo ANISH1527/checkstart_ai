@@ -34,6 +34,10 @@ services:
         fromDatabase:
           name: checkstart-db
           property: connectionString
+      - key: REDIS_URL
+        sync: false # Set in Render Dashboard: your Redis Internal Connection String (redis://red-...:6379) or external cloud Redis URL
+      - key: REDIS_REQUIRED
+        value: "false"
 
 databases:
   - name: checkstart-db
