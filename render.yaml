@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: checkstart-ai-backend
+    env: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false # Set in Render Dashboard: your Gemini API key
+      - key: JWT_SECRET_KEY
+        generateValue: true # Render automatically generates a cryptographically secure 64-char key
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "10080"
+      - key: CORS_ORIGINS
+        sync: false # Set in Render Dashboard: your Vercel frontend URL, e.g. https://checkstart-ai.vercel.app
+      - key: CELERY_TASK_ALWAYS_EAGER
+        value: "1"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: checkstart-db
+          property: connectionString
+
+databases:
+  - name: checkstart-db
+    plan: free
+    region: oregon
+    databaseName: checkstart_prod
+    user: checkstart_user

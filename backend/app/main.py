@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
             redis_ok = False
             logger.warning(f"Startup Redis check failed: {e}")
 
-    if settings.is_production and (not db_ok or not redis_ok):
+    if settings.is_production and (not db_ok or (getattr(settings, "REDIS_REQUIRED", False) and not redis_ok)):
         raise RuntimeError(f"Startup health check failed in production. DB OK: {db_ok}, Redis OK: {redis_ok}")
 
     # Vector Index & Sample Data Initialization
@@ -151,15 +151,19 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 
 # Configure CORS for React/Next.js frontend integration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+cors_origins_list = [origin.strip() for origin in getattr(settings, "CORS_ORIGINS", "").split(",") if origin.strip()]
+if not cors_origins_list:
+    cors_origins_list = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
-    ],
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

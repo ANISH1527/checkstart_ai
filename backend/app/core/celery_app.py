@@ -16,5 +16,5 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
-    task_always_eager=os.getenv("TESTING", "0") == "1",
+    task_always_eager=os.getenv("TESTING", "0") == "1" or os.getenv("CELERY_TASK_ALWAYS_EAGER", "0") == "1",
 )
