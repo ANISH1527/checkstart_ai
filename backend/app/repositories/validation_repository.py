@@ -6,8 +6,9 @@ from app.models.evidence import Evidence
 from app.models.competitor import Competitor
 from app.models.recommendation import Recommendation
 from app.models.audit_log import AuditLog
-from app.models.embedding import Embedding
+from app.models.embedding import Embedding, IdeaEmbedding
 from app.models.user_feedback import UserFeedback
+from app.models.report_analysis import ReportAnalysis
 
 
 class ValidationRepository:
@@ -28,6 +29,16 @@ class ValidationRepository:
         pipeline_timing: Optional[dict] = None,
         session_id: Optional[str] = None,
         framework_version: str = "v1.0",
+        framework_name: str = "report_v1",
+        previous_report_id: Optional[int] = None,
+        percentage: Optional[float] = None,
+        market_demand: Optional[float] = None,
+        problem_severity: Optional[float] = None,
+        competition: Optional[float] = None,
+        target_customer: Optional[float] = None,
+        innovation: Optional[float] = None,
+        feasibility: Optional[float] = None,
+        revenue_potential: Optional[float] = None,
         generation_mode: str = "ai_standard",
         degraded: bool = False,
         inputs_changed: Optional[dict] = None,
@@ -62,7 +73,17 @@ class ValidationRepository:
             classification=classification,
             pipeline_timing=pipeline_timing,
             session_id=session_id,
+            framework_name=framework_name,
             framework_version=framework_version,
+            previous_report_id=previous_report_id,
+            percentage=percentage if percentage is not None else overall_score,
+            market_demand=market_demand,
+            problem_severity=problem_severity,
+            competition=competition,
+            target_customer=target_customer,
+            innovation=innovation,
+            feasibility=feasibility,
+            revenue_potential=revenue_potential,
             generation_mode=generation_mode,
             degraded=degraded,
             inputs_changed=inputs_changed,
@@ -164,20 +185,85 @@ class ValidationRepository:
             self.db.add(rec_obj)
         self.db.commit()
 
-    def create_audit_log(self, validation_id: int, event: str, metadata: str):
+    def save_report_analysis(
+        self,
+        validation_id: int,
+        strengths: list,
+        weaknesses: list,
+        risks: list,
+        recommendations: list,
+        evidence: list
+    ) -> ReportAnalysis:
+        existing = self.db.query(ReportAnalysis).filter(ReportAnalysis.validation_id == validation_id).first()
+        if existing:
+            existing.strengths = strengths
+            existing.weaknesses = weaknesses
+            existing.risks = risks
+            existing.recommendations = recommendations
+            existing.evidence = evidence
+            self.db.commit()
+            self.db.refresh(existing)
+            return existing
+
+        ra = ReportAnalysis(
+            validation_id=validation_id,
+            strengths=strengths,
+            weaknesses=weaknesses,
+            risks=risks,
+            recommendations=recommendations,
+            evidence=evidence
+        )
+        self.db.add(ra)
+        self.db.commit()
+        self.db.refresh(ra)
+        return ra
+
+    def create_audit_log(
+        self,
+        validation_id: Optional[int],
+        event: str,
+        metadata: str,
+        duration_ms: Optional[int] = None,
+        user_id: Optional[int] = None,
+        idea_id: Optional[int] = None
+    ) -> AuditLog:
         log_obj = AuditLog(
             validation_id=validation_id,
+            user_id=user_id,
+            idea_id=idea_id,
             event=event,
+            duration_ms=duration_ms,
             log_metadata=metadata
         )
         self.db.add(log_obj)
         self.db.commit()
+        return log_obj
 
     def save_embedding(self, idea_id: int, model_name: str, vector_ref: str) -> Embedding:
         emb = Embedding(
             idea_id=idea_id,
             model_name=model_name,
             vector_reference=vector_ref
+        )
+        self.db.add(emb)
+        self.db.commit()
+        self.db.refresh(emb)
+        return emb
+
+    def save_idea_embedding(
+        self,
+        idea_id: int,
+        version: int,
+        model_name: str,
+        vector: str,
+        text_hash: Optional[str] = None
+    ) -> IdeaEmbedding:
+        emb = IdeaEmbedding(
+            idea_id=idea_id,
+            version=version,
+            model_name=model_name,
+            vector=vector,
+            text_hash=text_hash
         )
         self.db.add(emb)
         self.db.commit()
@@ -228,4 +314,3 @@ class ValidationRepository:
             .order_by(UserFeedback.created_at.desc())
             .all()
         )
-

@@ -143,3 +143,145 @@ def test_frontend_param_map_keys_match_validation_score_parameters():
             f"Frontend param '{frontend_key}' maps to '{backend_param}' "
             f"which is not in WEIGHTS dict"
         )
+
+
+# ============================================================================
+# PHASE 1 — 7-Parameter Scoring Engine Tests (report_v1)
+# ============================================================================
+
+def test_report_v1_weights_sum_to_one():
+    """Report v1 7 weights must sum to exactly 1.0"""
+    from app.services.scoring_service import REPORT_V1_WEIGHTS
+    assert len(REPORT_V1_WEIGHTS) == 7
+    assert abs(sum(REPORT_V1_WEIGHTS.values()) - 1.0) < 1e-9
+    assert REPORT_V1_WEIGHTS["market_demand"] == 0.25
+    assert REPORT_V1_WEIGHTS["problem_severity"] == 0.20
+    assert REPORT_V1_WEIGHTS["competition"] == 0.15
+    assert REPORT_V1_WEIGHTS["target_customer"] == 0.10
+    assert REPORT_V1_WEIGHTS["innovation"] == 0.10
+    assert REPORT_V1_WEIGHTS["feasibility"] == 0.10
+    assert REPORT_V1_WEIGHTS["revenue_potential"] == 0.10
+
+
+def test_clamp_score_boundaries_and_nan():
+    """clamp_score handles NaN/None -> 5.0 and clamps strictly to [1.0, 10.0]"""
+    import math
+    from app.services.scoring_service import clamp_score
+
+    assert clamp_score(None) == 5.0
+    assert clamp_score(float("nan")) == 5.0
+    assert clamp_score("invalid") == 5.0
+    assert clamp_score(0.0) == 1.0
+    assert clamp_score(0.5) == 1.0
+    assert clamp_score(1.0) == 1.0
+    assert clamp_score(10.0) == 10.0
+    assert clamp_score(15.0) == 10.0
+    assert clamp_score(8.44) == 8.4
+    assert clamp_score(8.46) == 8.5
+
+
+def test_report_v1_boundary_scores():
+    """All 1.0 -> 10.0% (min attainable), all 10.0 -> 100.0%"""
+    from app.services.scoring_service import calculate_validation_score, ScoringService
+
+    all_min = {
+        "market_demand": 1.0,
+        "problem_severity": 1.0,
+        "competition": 1.0,
+        "target_customer": 1.0,
+        "innovation": 1.0,
+        "feasibility": 1.0,
+        "revenue_potential": 1.0,
+    }
+    score_min = calculate_validation_score(all_min)
+    assert score_min == 10.0
+
+    all_max = {
+        "market_demand": 10.0,
+        "problem_severity": 10.0,
+        "competition": 10.0,
+        "target_customer": 10.0,
+        "innovation": 10.0,
+        "feasibility": 10.0,
+        "revenue_potential": 10.0,
+    }
+    score_max = calculate_validation_score(all_max)
+    assert score_max == 100.0
+
+
+def test_report_v1_sample_calculation():
+    """
+    Academic report exact sample calculation:
+    (8.5, 8.4, 8.1, 9.7, 9.4, 7.9, 9.3) -> 8.65 -> 86.5%
+    """
+    from app.services.scoring_service import calculate_validation_score, ScoringService
+
+    sample_scores = {
+        "market_demand": 8.5,
+        "problem_severity": 8.4,
+        "competition": 8.1,
+        "target_customer": 9.7,
+        "innovation": 9.4,
+        "feasibility": 7.9,
+        "revenue_potential": 9.3,
+    }
+    v_score = calculate_validation_score(sample_scores)
+    assert v_score == 86.5
+
+    svc = ScoringService(framework="report_v1")
+    result = svc.calculate(sample_scores)
+    assert result["percentage"] == 86.5
+    assert result["raw_s"] == 8.65
+    assert result["classification"] == "Highly Promising"
+    assert result["classification_info"]["action"] == "Build MVP and recruit beta users"
+
+
+def test_report_v1_classification_bands():
+    """Verify all 4 report_v1 classification bands and action recommendations"""
+    from app.services.scoring_service import classify_report_v1
+
+    # >= 80.0
+    c1 = classify_report_v1(85.0)
+    assert c1["code"] == "HIGHLY_PROMISING"
+    assert c1["category"] == "Highly Promising"
+    assert c1["action"] == "Build MVP and recruit beta users"
+
+    # 60.0 - 79.9
+    c2 = classify_report_v1(72.5)
+    assert c2["code"] == "PROMISING"
+    assert c2["category"] == "Promising"
+    assert c2["action"] == "Conduct 10-15 customer interviews"
+
+    # 40.0 - 59.9
+    c3 = classify_report_v1(52.0)
+    assert c3["code"] == "NEEDS_IMPROVEMENT"
+    assert c3["category"] == "Needs Improvement"
+    assert c3["action"] == "Execute a structured concept pivot"
+
+    # < 40.0
+    c4 = classify_report_v1(35.0)
+    assert c4["code"] == "HIGH_RISK"
+    assert c4["category"] == "High Risk"
+    assert c4["action"] == "Pause development and conduct exploratory research"
+
+
+def test_llm_never_supplies_overall_score():
+    """The LLM's hallucinated overall_score is ignored; calculated by deterministic math"""
+    from app.services.scoring_service import ScoringService
+
+    svc = ScoringService(framework="report_v1")
+    # Even if LLM claimed overall_score was 99.0
+    llm_payload = {
+        "overall_score": 99.0,
+        "market_demand": 5.0,
+        "problem_severity": 5.0,
+        "competition": 5.0,
+        "target_customer": 5.0,
+        "innovation": 5.0,
+        "feasibility": 5.0,
+        "revenue_potential": 5.0,
+    }
+    result = svc.calculate(llm_payload)
+    # 5.0 on all 7 params with sum(w)=1.0 gives 5.0 -> 50.0%
+    assert result["percentage"] == 50.0
+    assert result["classification"] == "Needs Improvement"

@@ -252,6 +252,10 @@ class ValidationService:
         idea.version = next_version
         self.db.commit()
 
+        # Get previous validation report id if exists
+        previous_val = self.val_repo.get_latest_validation(idea.id)
+        previous_report_id = previous_val.id if previous_val else None
+
         from app.services.llm_service import LLM_PROMPT_VERSION
         from app.services.embedding_service import EMBEDDING_MODEL_VERSION
         from app.services.scoring_service import SCORING_ENGINE_VERSION
@@ -280,7 +284,17 @@ class ValidationService:
             classification=classification,
             pipeline_timing=pipeline_timing,
             session_id=session_id,
+            framework_name="report_v1",
             framework_version=FRAMEWORK_VERSION,
+            previous_report_id=previous_report_id,
+            percentage=overall_score,
+            market_demand=param_scores.get("market_demand"),
+            problem_severity=param_scores.get("problem_severity") or param_scores.get("problem_solution_fit"),
+            competition=param_scores.get("competition"),
+            target_customer=param_scores.get("target_customer") or param_scores.get("target_customer_clarity"),
+            innovation=param_scores.get("innovation") or param_scores.get("uniqueness_innovation"),
+            feasibility=param_scores.get("feasibility") or param_scores.get("technical_feasibility"),
+            revenue_potential=param_scores.get("revenue_potential") or param_scores.get("business_potential"),
             generation_mode=generation_mode,
             degraded=degraded,
             inputs_changed=inputs_changed,
@@ -332,11 +346,36 @@ class ValidationService:
         self.val_repo.save_competitors(val_result.id, competitors_list)
         self.val_repo.save_recommendations(val_result.id, recommendations)
 
+        # Save Report Analysis Table (Phase 4)
+        formatted_recs = [
+            {
+                "id": r.get("id") or f"rec-{i}",
+                "action": r.get("action", ""),
+                "status": r.get("status", "OPEN"),
+                "severity": r.get("severity", "MEDIUM"),
+                "expected_impact": r.get("expected_impact"),
+                "estimated_effort": r.get("estimated_effort")
+            }
+            for i, r in enumerate(recommendations)
+        ]
+        self.val_repo.save_report_analysis(
+            validation_id=val_result.id,
+            strengths=analysis_json.get("strengths", []),
+            weaknesses=analysis_json.get("weaknesses", []),
+            risks=analysis_json.get("risks", []),
+            recommendations=formatted_recs,
+            evidence=evidence_list
+        )
+
         # Audit Log Entry
+        duration_ms = int(pipeline_timing.get("total_duration_ms", 0)) if pipeline_timing else None
         self.val_repo.create_audit_log(
             validation_id=val_result.id,
             event="VALIDATION_COMPLETED",
-            metadata=json.dumps({"input_hash": input_hash, "overall_score": overall_score})
+            metadata=json.dumps({"input_hash": input_hash, "overall_score": overall_score}),
+            duration_ms=duration_ms,
+            user_id=user_id,
+            idea_id=idea.id
         )
 
         aggregated_7 = self.scoring_service.aggregate_to_7_parameters(param_scores)

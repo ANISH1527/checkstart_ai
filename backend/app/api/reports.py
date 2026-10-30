@@ -20,9 +20,22 @@ router = APIRouter(tags=["Reports & Validation Analysis"])
 
 
 def format_validation_report(val: ValidationResult, idea: Idea, db: Session) -> Dict[str, Any]:
-    classification_info = ScoringService.classify(val.overall_score)
-    param_dict = {s.parameter: s.score for s in val.scores}
-    seven_params = ScoringService.aggregate_to_7_parameters(param_dict)
+    fw_name = getattr(val, "framework_name", "report_v1")
+    classification_info = ScoringService.classify(val.overall_score, framework=fw_name)
+    
+    if getattr(val, "market_demand", None) is not None and getattr(val, "problem_severity", None) is not None:
+        seven_params = {
+            "marketDemand": round(val.market_demand, 1),
+            "problemSeverity": round(val.problem_severity, 1),
+            "competition": round(val.competition, 1),
+            "targetCustomer": round(val.target_customer, 1),
+            "innovation": round(val.innovation, 1),
+            "feasibility": round(val.feasibility, 1),
+            "revenuePotential": round(val.revenue_potential, 1),
+        }
+    else:
+        param_dict = {s.parameter: s.score for s in val.scores}
+        seven_params = ScoringService.aggregate_to_7_parameters(param_dict)
 
     # Find previous report if any
     prev = (
@@ -106,10 +119,12 @@ def format_validation_report(val: ValidationResult, idea: Idea, db: Session) -> 
         "startupIdea": _format_idea(idea, db),
         "conversationId": str(val.session_id) if val.session_id else None,
         "versionNumber": val.version,
-        "previousReportId": str(prev.id) if prev else None,
+        "previousReportId": str(val.previous_report_id) if getattr(val, "previous_report_id", None) else (str(prev.id) if prev else None),
+        "frameworkName": fw_name,
+        "frameworkVersion": getattr(val, "framework_version", "v1.0"),
         "scores": seven_params,
-        "overallScore": val.overall_score,
-        "validationPercentage": round(val.overall_score),
+        "overallScore": round(val.overall_score / 10.0, 1) if val.overall_score > 10 else round(val.overall_score, 1),
+        "validationPercentage": round(val.percentage) if getattr(val, "percentage", None) is not None else round(val.overall_score),
         "validationCategory": classification_info["category"],
         "summary": val.summary or idea.description or "",
         "createdAt": val.created_at.isoformat() if val.created_at else "",
@@ -134,6 +149,11 @@ def get_report_by_id(
         )
 
     val = db.query(ValidationResult).filter(ValidationResult.id == val_id).first()
+    if not val:
+        val = db.query(ValidationResult).filter(
+            ValidationResult.idea_id == val_id
+        ).order_by(ValidationResult.version.desc()).first()
+
     if not val:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

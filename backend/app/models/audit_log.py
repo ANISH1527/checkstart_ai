@@ -8,8 +8,11 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    validation_id = Column(Integer, ForeignKey("validation_results.id", ondelete="CASCADE"), nullable=False)
+    validation_id = Column(Integer, ForeignKey("validation_results.id", ondelete="CASCADE"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    idea_id = Column(Integer, ForeignKey("ideas.id", ondelete="CASCADE"), nullable=True)
     event = Column(String(100), nullable=False)
+    duration_ms = Column(Integer, nullable=True)
     log_metadata = Column("metadata", Text, nullable=True)  # JSON string
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
 
