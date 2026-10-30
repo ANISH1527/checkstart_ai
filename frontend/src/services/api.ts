@@ -18,7 +18,7 @@ import {
 const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
 
 function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('ai_validate_token');
+  const token = localStorage.getItem('ai_validate_token') || localStorage.getItem('auth_token');
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -41,6 +41,8 @@ async function handleResponse<T>(response: Response): Promise<T> {
     if (response.status === 401) {
       localStorage.removeItem('ai_validate_token');
       localStorage.removeItem('ai_validate_user');
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
     }
     const message =
       data.message ||
@@ -59,6 +61,26 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
 
 export const api = {
+  // Generic GET
+  async get(endpoint: string): Promise<any> {
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const url = cleanEndpoint.startsWith('/api')
+      ? cleanEndpoint
+      : `${API_BASE}${cleanEndpoint}`;
+    const res = await fetch(url, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  // Sessions API
+  async getSessions(): Promise<{ sessions: any[]; conversations: any[]; items: any[] }> {
+    const res = await fetch(`${API_BASE}/sessions`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
   // Auth
   async register(payload: {
     name: string;
@@ -149,6 +171,8 @@ export const api = {
   async logout(): Promise<void> {
     localStorage.removeItem('ai_validate_token');
     localStorage.removeItem('ai_validate_user');
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
   },
 
   // Conversation & Chatbot APIs
@@ -296,6 +320,21 @@ export const api = {
 
   async getReport(reportId: string): Promise<{ report: ValidationReport }> {
     const res = await fetch(`${API_BASE}/validation/${reportId}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async toggleRecommendation(ideaId: string | number, recId: string | number): Promise<any> {
+    const res = await fetch(`${API_BASE}/ideas/${ideaId}/recommendations/${recId}/complete`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  async compareIdeaVersions(ideaId: string | number, fromVersion: number, toVersion: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/ideas/${ideaId}/compare?from=${fromVersion}&to=${toVersion}`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
