@@ -10,7 +10,7 @@
 
 **CheckStart AI** is an intelligent, evidence-aware startup idea validation system designed for founders, student entrepreneurs, and startup incubators. It combines conversational AI co-piloting, lightweight NLP entity extraction, deterministic multi-dimensional scoring, vector similarity benchmarking, confidence calibration, and actionable strategic recommendations.
 
-Unlike generic LLM wrappers that output arbitrary scores, CheckStart AI uses an **authoritative 9-dimension weighted mathematical engine** calibrated with rule-based verification, information-gap detection, and multi-version tracking (`v1` → `v2`) with delta analysis.
+Unlike generic LLM wrappers that output arbitrary scores, CheckStart AI uses an **authoritative 7-parameter mathematical scoring engine (`report_v1`)** calibrated with rule-based verification, Layer 8 claim taxonomy, information-gap detection, and multi-version tracking (`v1` → `v2`) with delta analysis. A 9-dimension framework (`legacy_v9`) is also preserved for historical backward compatibility.
 
 ---
 
@@ -207,35 +207,36 @@ checkstart-ai/
 
 ---
 
-### 2. Backend Setup
+### 2. Backend Setup & Run Modes
 
-1. Open a terminal and navigate to the backend directory:
+#### Mode A: Standalone Development Mode (Default - SQLite, No Celery/Redis required)
+This is the quickest way to get started. The system uses local SQLite (`startup_validation.db`) and in-memory caching/synchronous execution:
+
+1. Navigate to the backend directory and activate the virtual environment:
    ```bash
    cd backend
-   ```
-
-2. Create and activate a Python virtual environment:
-   ```bash
-   # Windows (PowerShell / Command Prompt)
-   python -m venv venv
+   # Windows:
    .\venv\Scripts\activate
-
-   # Linux / macOS
-   python3 -m venv venv
+   # Linux/macOS:
    source venv/bin/activate
    ```
 
-3. Install the dependencies:
+2. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-4. Configure your `.env` file:
+3. Ensure `.env` is configured (SQLite by default):
    ```bash
    cp .env.example .env
    ```
 
-5. Run the FastAPI development server:
+4. Run database migrations with Alembic:
+   ```bash
+   python -m alembic upgrade head
+   ```
+
+5. Launch the FastAPI server:
    ```bash
    python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
    ```
@@ -244,16 +245,38 @@ checkstart-ai/
    - Interactive Swagger API Documentation: **http://127.0.0.1:8000/docs**
    - ReDoc Documentation: **http://127.0.0.1:8000/redoc**
 
+#### Mode B: Distributed Production Mode (Celery + Redis)
+For asynchronous background task offloading and distributed worker queues:
+
+1. Start a local Redis server instance:
+   ```bash
+   # Windows (via Docker or native service):
+   docker run -d -p 6379:6379 --name checkstart-redis redis:7-alpine
+   # Linux:
+   sudo systemctl start redis-server
+   ```
+
+2. Start the Celery worker process:
+   ```bash
+   cd backend
+   celery -A app.core.celery_app.celery_app worker --loglevel=info -P solo
+   ```
+
+3. Start the FastAPI application in a separate terminal:
+   ```bash
+   python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+   ```
+
 ---
 
 ### 3. Frontend Setup
 
-1. Open a second terminal and navigate to the frontend directory:
+1. Open a terminal and navigate to the frontend directory:
    ```bash
    cd frontend
    ```
 
-2. Install the JavaScript/TypeScript dependencies:
+2. Install dependencies:
    ```bash
    npm install
    ```
@@ -267,52 +290,49 @@ checkstart-ai/
 
 ---
 
-## ⚙️ Configuration (.env)
+## ⚙️ Environment Variables Reference
 
-### Backend (`backend/.env`)
-```env
-# Application Settings
-APP_NAME="CheckStart AI Validation API"
-ENVIRONMENT="development"
-DEBUG=True
-API_V1_STR="/api/v1"
-
-# Database Connection (SQLite by default; or PostgreSQL: postgresql://user:pass@localhost:5432/checkstart)
-DATABASE_URL="sqlite:///./startup_validation.db"
-
-# Security & Authentication
-SECRET_KEY="your-secure-jwt-secret-key-change-in-production"
-JWT_ALGORITHM="HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES=1440
-
-# LLM Configuration ("gemini", "ollama", or "mock")
-LLM_PROVIDER="mock"
-GEMINI_API_KEY="your-gemini-api-key-here"
-
-# Vector Embedding Settings
-EMBEDDING_MODEL="all-MiniLM-L6-v2"
-SIMILARITY_THRESHOLD=0.85
-```
-
-### Frontend (`frontend/.env`)
-```env
-# API Base URL (proxied by Vite to http://localhost:8000)
-VITE_API_URL=/api
-```
+| Variable | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `APP_NAME` | string | `"AI Startup Idea Validation API"` | Application display name in logs and telemetry |
+| `ENVIRONMENT` | string | `"development"` | Runtime mode (`development`, `staging`, `production`). In production, Google GIS signature verification is strictly enforced. |
+| `DEBUG` | boolean | `true` | Enables verbose debug logging and traceback exposure |
+| `API_V1_STR` | string | `"/api/v1"` | Canonical API prefix for versioned routes |
+| `DATABASE_URL` | string | `"sqlite:///./startup_validation.db"` | SQLAlchemy database connection URI (SQLite or PostgreSQL) |
+| `TEST_DATABASE_URL` | string | `"sqlite:///./test.db"` | Isolated database connection string used during pytest runs |
+| `REDIS_URL` | string | `"redis://localhost:6379/0"` | Redis instance URL for Celery message broker and embedding caching |
+| `LLM_PROVIDER` | string | `"mock"` | Qualitative reasoning engine (`gemini`, `ollama`, or `mock`) |
+| `GEMINI_API_KEY` | string | `None` | Google Gemini API credential for generative reasoning |
+| `JWT_SECRET_KEY` | string | `"default-insecure-secret-key-change-me-1234567890"` | HMAC-SHA256 signing secret for session access tokens |
+| `JWT_ALGORITHM` | string | `"HS256"` | JWT token hashing algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | integer | `10080` | Access token lifespan (10080 min = 7-day expiry) |
+| `EMBEDDING_MODEL` | string | `"all-MiniLM-L6-v2"` | HuggingFace SentenceTransformers embedding model identifier (384 dimensions) |
+| `SIMILARITY_THRESHOLD` | float | `0.85` | Cosine similarity threshold for flagging direct competitor ventures |
+| `LOG_LEVEL` | string | `"INFO"` | Logging verbosity level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 
 ---
 
 ## 🧪 Running Automated Tests
 
-### Backend Unit & Integration Tests
-CheckStart AI includes a comprehensive test suite covering authentication, chat sessions, prompt injection guardrails, scoring formulas, vector similarity, and comparison logic:
+### Backend Unit & Integration Tests (`pytest`)
+CheckStart AI includes a comprehensive test suite covering authentication, chat sessions, prompt injection guardrails, 7-parameter scoring formulas, Layer 8 claim taxonomy, FAISS vector similarity, and multi-tenant isolation:
 
 ```bash
 cd backend
 python -m pytest -v
 ```
 
-> **Test Suite Status:** 15 test modules, 67 test cases passing (100% pass rate).
+> **Backend Suite Status:** 19 test modules, **111 test cases passing (100% pass rate)**.
+
+### Frontend Unit & Component Tests (`vitest`)
+Test the frontend mathematical engine, score clamping, progress-bar thresholds, and formatting logic:
+
+```bash
+cd frontend
+npm run test
+```
+
+> **Frontend Suite Status:** **75 test cases passing (100% pass rate)**.
 
 ### Frontend Production Build Test
 Verify TypeScript type checking and Vite production bundling:
@@ -324,24 +344,39 @@ npm run build
 
 ---
 
-## 📡 API Overview
+## 📡 Canonical API Endpoints
+
+All endpoints are hosted under `/api/v1` (with `/api` compatibility aliases) and strictly enforce multi-tenant authorization (returns HTTP 403/404 for unowned ideas):
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST` | `/api/auth/register` | Register new user account (`{ token, user }`) |
-| `POST` | `/api/auth/login` | Login with email/name and password |
-| `POST` | `/api/auth/google` | Google GIS SSO credential verification |
-| `GET` | `/api/auth/me` | Fetch currently authenticated user profile |
-| `POST` | `/api/conversations` | Create new validation chat session |
-| `POST` | `/api/conversations/{id}/messages` | Send message (triggers Turn 1 instant validation) |
-| `POST` | `/api/conversations/{id}/validate` | Trigger idea validation / recalculation |
-| `GET` | `/api/conversations/{id}` | Fetch session history and extracted entities |
-| `GET` | `/api/validation/{id}` | Retrieve full interactive validation report |
-| `GET` | `/api/ideas` | List founder's startup ventures with search and filters |
-| `GET` | `/api/ideas/dashboard/stats` | Retrieve founder metrics (Total ideas, validations, average score) |
-| `POST` | `/api/ideas/compare` | Multi-venture comparative matrix for 2–4 ideas |
-| `PUT` | `/api/user/profile` | Update user academic profile |
-| `PUT` | `/api/settings` | Update user preferences (e.g. theme mode) |
+| `POST` | `/api/v1/auth/register` | Register new student founder account |
+| `POST` | `/api/v1/auth/login` | Student login (returns 7-day JWT access token) |
+| `POST` | `/api/v1/auth/google` | Google GIS SSO verification (cryptographically verified in production) |
+| `GET` | `/api/v1/users/profile` | Retrieve student personal and academic profile |
+| `PUT` | `/api/v1/users/profile` | Update personal/academic details and theme settings |
+| `PUT` | `/api/v1/users/password` | Change user password with current password verification |
+| `GET` | `/api/v1/ideas` | List founder's ventures with search and status filters |
+| `POST` | `/api/v1/ideas` | Create a new startup venture record |
+| `GET` | `/api/v1/ideas/{id}/reports` | List all historical validation reports for a venture |
+| `GET` | `/api/v1/ideas/{id}/reports/{report_id}` | Fetch a specific immutable validation report by ID |
+| `GET` | `/api/v1/ideas/{id}/compare?from=1&to=2` | Compare version deltas ($S_{v2}-S_{v1}$) and recommendation completion |
+| `POST` | `/api/v1/ideas/{id}/validate` | Run or re-run the 15-layer validation pipeline on a venture |
+| `POST` | `/api/v1/ideas/{id}/chat` | Multi-turn FSM dialogue turn (entity extraction and guidance) |
+| `POST` | `/api/v1/ideas/compare` | Multi-idea comparative matrix for 2–4 ventures |
+
+---
+
+## ⚠️ Known Limitations
+
+1. **SQLite Concurrency & Multi-Worker Scaling**:
+   The default local setup utilizes SQLite with WAL mode. Because SQLite relies on database-level file locking, high write concurrency under multi-threaded Celery workers or multiple concurrent users can experience busy/locked timeouts. For multi-user staging and production deployments, configure `DATABASE_URL` with PostgreSQL.
+2. **Static Competitor Benchmark Dataset**:
+   The semantic similarity engine matches concepts against indexed startup records and pre-seeded domain benchmark ventures. Real-time web crawling of newly launched competitors requires external search API keys (e.g. SerpAPI) and is bounded by external API quotas.
+3. **Fixed Parameter Weights**:
+   The authoritative `report_v1` scoring engine assigns fixed, mathematically validated weights across the 7 parameters (Market Demand 0.25, Problem Severity 0.20, Competition 0.15, Target Customer 0.10, Innovation 0.10, Feasibility 0.10, Revenue Potential 0.10). The framework does not dynamically re-weight parameters across disparate venture archetypes (e.g., deep tech hardware vs. B2C mobile apps).
+4. **Founder-Input Dependence & Socratic Quality**:
+   The precision of generated recommendations and viability classifications directly correlates with the specificity of the founder's pitch inputs. Broad or vague submissions (e.g., target customer "everyone", missing revenue models) trigger intentional Layer 8 penalty caps.
 
 ---
 

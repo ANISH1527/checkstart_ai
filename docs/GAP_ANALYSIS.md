@@ -119,3 +119,20 @@ This Gap Analysis provides a comprehensive, item-by-item audit of each project p
 6. **Phase 6**: Write comprehensive test suites covering all criteria; record test executions in `docs/TEST_REPORT.md` and `docs/TEST_CASES.md`.
 7. **Phase 7**: Execute `scripts/run_benchmarks.py` across the 4 benchmark ventures; compile results into `docs/BENCHMARKS.md` and CSV.
 8. **Phase 8**: Update `README.md` and produce `docs/REPORT_CORRECTIONS.md`.
+
+---
+
+## Post-Implementation Verification Summary (Before vs. After)
+
+All 8 phases of the academic specification have been systematically implemented, tested, and empirically verified.
+
+| Phase & Capability | Initial Status (Before) | Final Status (After) | Verified Artifacts / Evidence |
+| :--- | :---: | :---: | :--- |
+| **Phase 1: 7-Parameter Scoring Engine** | PARTIAL / MISSING | **DONE** | `report_v1` primary engine, $\sum w_i = 1.0$ at import, `clamp_score()`, 4-tier rubric, Alembic migrations (`84d352c`) |
+| **Phase 2: Layer 8 Claims & Layer 6 Evidence** | MISSING | **DONE** | 4-tier taxonomy (`FACT`, `INFERENCE`, `ASSUMPTION`, `UNKNOWN`), provenance origins, retrieval dates, UI badges (`0110154`) |
+| **Phase 3: FAISS Vector Search & Embeddings** | PARTIAL / MISSING | **DONE** | `faiss.IndexFlatIP` over 384-dim normalized vectors, `vector_index.faiss` disk persistence, DB rebuild, sample ventures seed (`27b970c`) |
+| **Phase 4: Schema, Versioning, Canonical API** | PARTIAL / MISSING | **DONE** | `report_analyses`, `idea_embeddings`, `audit_logs`, canonical `/api/v1` routes with 404/403 ownership isolation, version delta math, recommendation toggle (`b282edd`) |
+| **Phase 5: FSM Chat, Fallback, Profile** | PARTIAL | **DONE** | 4-step FSM dialogue manager, regex triggers, non-destructive state sync, 12s timeout + 1 retry + MD5 offline fallback, 7-day JWT, Incubator Guidelines page (`d38a654`) |
+| **Phase 6: Automated Tests (Pytest + Vitest)** | PARTIAL | **DONE** | 111 backend pytest tests (100% pass) + 75 frontend vitest tests (100% pass) = 186 total tests, `docs/TEST_CASES.md` (TC-01..TC-10), `docs/TEST_REPORT.md` (`b79dc3f`) |
+| **Phase 7: Real Empirical Benchmarks** | MISSING | **DONE** | `scripts/run_benchmarks.py`, 3 runs per venture across 5 scenarios, 0.0 score variance, `docs/BENCHMARKS.md`, `docs/benchmarks.csv` (`4e74c18`) |
+| **Phase 8: Documentation & Report Corrections** | PARTIAL / MISSING | **DONE** | `README.md` (SQLite/Celery modes, env vars table, known limitations), `docs/REPORT_CORRECTIONS.md` |
