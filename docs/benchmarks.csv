@@ -1,0 +1,16 @@
+venture_key,venture_name,version,description_type,run_number,wall_clock_ms,score_pct,category,confidence_pct,llm_mode,market_demand,problem_severity,competition,target_customer,innovation,feasibility,revenue_potential
+edupath_ai,EduPath AI,v1,Realistic Draft (EdTech Exam Prep),1,18566.94,77.0,Promising,40.0,ai_standard,8.2,8.5,6.5,8.8,4.0,8.5,8.2
+edupath_ai,EduPath AI,v1,Realistic Draft (EdTech Exam Prep),2,58.82,77.0,Promising,40.0,ai_standard,8.2,8.5,6.5,8.8,4.0,8.5,8.2
+edupath_ai,EduPath AI,v1,Realistic Draft (EdTech Exam Prep),3,45.59,77.0,Promising,40.0,ai_standard,8.2,8.5,6.5,8.8,4.0,8.5,8.2
+medidorm_health,MediDorm Health,v1,Realistic Draft (On-Campus Telehealth),1,67.26,77.0,Promising,40.0,ai_standard,8.2,8.5,6.5,8.8,4.0,8.5,8.2
+medidorm_health,MediDorm Health,v1,Realistic Draft (On-Campus Telehealth),2,56.18,77.0,Promising,40.0,ai_standard,8.2,8.5,6.5,8.8,4.0,8.5,8.2
+medidorm_health,MediDorm Health,v1,Realistic Draft (On-Campus Telehealth),3,54.84,77.0,Promising,40.0,ai_standard,8.2,8.5,6.5,8.8,4.0,8.5,8.2
+findorm_split,FinDorm Split,v1,Realistic Draft (Shared Student Expenses),1,68.13,77.0,Promising,40.0,ai_standard,8.2,8.5,6.5,8.8,4.0,8.5,8.2
+findorm_split,FinDorm Split,v1,Realistic Draft (Shared Student Expenses),2,59.12,77.0,Promising,40.0,ai_standard,8.2,8.5,6.5,8.8,4.0,8.5,8.2
+findorm_split,FinDorm Split,v1,Realistic Draft (Shared Student Expenses),3,54.58,77.0,Promising,40.0,ai_standard,8.2,8.5,6.5,8.8,4.0,8.5,8.2
+campus_quick_delivery_v1,Campus Quick Delivery (v1 Unrefined),v1,Unrefined Spec (Vague Target & Missing Pricing),1,71.62,70.0,Promising,32.2,ai_standard,8.2,8.5,6.5,2.5,4.0,8.5,8.2
+campus_quick_delivery_v1,Campus Quick Delivery (v1 Unrefined),v1,Unrefined Spec (Vague Target & Missing Pricing),2,61.29,70.0,Promising,32.2,ai_standard,8.2,8.5,6.5,2.5,4.0,8.5,8.2
+campus_quick_delivery_v1,Campus Quick Delivery (v1 Unrefined),v1,Unrefined Spec (Vague Target & Missing Pricing),3,60.98,70.0,Promising,32.2,ai_standard,8.2,8.5,6.5,2.5,4.0,8.5,8.2
+campus_quick_delivery_v2,Campus Quick Delivery (v2 Refined),v2,Refined Spec (Specific Target & Unit Economics),1,71.51,77.0,Promising,40.0,ai_standard,8.2,8.5,6.5,8.8,4.0,8.5,8.2
+campus_quick_delivery_v2,Campus Quick Delivery (v2 Refined),v2,Refined Spec (Specific Target & Unit Economics),2,60.1,77.0,Promising,40.0,ai_standard,8.2,8.5,6.5,8.8,4.0,8.5,8.2
+campus_quick_delivery_v2,Campus Quick Delivery (v2 Refined),v2,Refined Spec (Specific Target & Unit Economics),3,55.99,77.0,Promising,40.0,ai_standard,8.2,8.5,6.5,8.8,4.0,8.5,8.2
