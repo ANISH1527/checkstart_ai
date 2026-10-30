@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     JWT_SECRET_KEY: str = "default-insecure-secret-key-change-me-1234567890"
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7-day expiry (10080 minutes)
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
 

@@ -169,17 +169,39 @@ def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
     extracted_name = payload.name
     extracted_image = payload.profileImage
 
-    # Decode Google ID Token if provided
-    if payload.credential:
+    # Decode & verify Google ID Token
+    if getattr(settings, "ENVIRONMENT", "development").lower() != "development":
+        if not payload.credential:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Google ID token signature verification is required in production."
+            )
         try:
-            # Unverified claim decode for development, or Google verified
-            unverified_claims = jwt.get_unverified_claims(payload.credential)
-            extracted_sub = unverified_claims.get("sub") or extracted_sub
-            extracted_email = unverified_claims.get("email") or extracted_email
-            extracted_name = unverified_claims.get("name") or extracted_name
-            extracted_image = unverified_claims.get("picture") or extracted_image
+            from google.oauth2 import id_token
+            from google.auth.transport import requests as google_requests
+            id_info = id_token.verify_oauth2_token(
+                payload.credential,
+                google_requests.Request()
+            )
+            extracted_email = id_info.get("email")
+            extracted_sub = id_info.get("sub")
+            extracted_name = id_info.get("name") or extracted_name
+            extracted_image = id_info.get("picture") or extracted_image
         except Exception as e:
-            logger.warning(f"Google credential decoding fallback: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Google ID token signature verification failed: {e}"
+            )
+    else:
+        if payload.credential:
+            try:
+                unverified_claims = jwt.get_unverified_claims(payload.credential)
+                extracted_sub = unverified_claims.get("sub") or extracted_sub
+                extracted_email = unverified_claims.get("email") or extracted_email
+                extracted_name = unverified_claims.get("name") or extracted_name
+                extracted_image = unverified_claims.get("picture") or extracted_image
+            except Exception as e:
+                logger.warning(f"Google credential decoding fallback: {e}")
 
     if not extracted_email:
         raise HTTPException(

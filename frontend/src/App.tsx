@@ -20,6 +20,7 @@ import { MyIdeasPage } from './pages/MyIdeasPage';
 import { CompareIdeasPage } from './pages/CompareIdeasPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { IncubatorGuidelinesPage } from './pages/IncubatorGuidelinesPage';
 
 // Protected Admin Pages
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
@@ -29,6 +30,7 @@ import { AdminUserDetailPage } from './pages/admin/AdminUserDetailPage';
 import { AdminIdeasPage } from './pages/admin/AdminIdeasPage';
 import { AdminReportsPage } from './pages/admin/AdminReportsPage';
 
+
 export const App: React.FC = () => {
   return (
     <ThemeProvider>
@@ -37,6 +39,8 @@ export const App: React.FC = () => {
           <Routes>
             {/* Public Routes */}
             <Route path="/" element={<LandingPage />} />
+
+
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -47,11 +51,15 @@ export const App: React.FC = () => {
             <Route element={<ProtectedRoute />}>
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/validate" element={<NewValidationPage />} />
+              <Route path="/validate-idea" element={<NewValidationPage />} />
               <Route path="/report/:id" element={<ReportResultPage />} />
+              <Route path="/ideas/:id/report" element={<ReportResultPage />} />
               <Route path="/ideas" element={<MyIdeasPage />} />
               <Route path="/compare" element={<CompareIdeasPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/guidelines" element={<IncubatorGuidelinesPage />} />
+              <Route path="/incubator-guidelines" element={<IncubatorGuidelinesPage />} />
             </Route>
 
             {/* Admin Governance Protected Routes */}

@@ -115,12 +115,35 @@ class ChatService:
                 latest_report = self.db.query(ValidationResult).filter(
                     ValidationResult.idea_id == s.idea_id
                 ).order_by(ValidationResult.version.desc()).first()
+            if not latest_report:
+                latest_report = self.db.query(ValidationResult).filter(
+                    ValidationResult.session_id == s.id
+                ).order_by(ValidationResult.version.desc()).first()
 
             reports_count = 0
             if s.idea_id:
                 reports_count = self.db.query(ValidationResult).filter(
                     ValidationResult.idea_id == s.idea_id
                 ).count()
+            if not reports_count:
+                reports_count = self.db.query(ValidationResult).filter(
+                    ValidationResult.session_id == s.id
+                ).count()
+
+            val_res_dict = None
+            if latest_report:
+                val_res_dict = {
+                    "id": str(latest_report.id),
+                    "report_id": str(latest_report.id),
+                    "overall_score": latest_report.overall_score,
+                    "overallScore": latest_report.overall_score,
+                    "validationPercentage": round(latest_report.overall_score),
+                    "classification": latest_report.classification,
+                    "validationCategory": latest_report.classification,
+                    "summary": latest_report.summary or "",
+                    "version": latest_report.version,
+                    "createdAt": latest_report.created_at.isoformat() if latest_report.created_at else None,
+                }
 
             results.append({
                 "id": s.id,
@@ -129,12 +152,21 @@ class ChatService:
                 "status": s.status,
                 "lastMessage": last_msg.content if last_msg else None,
                 "structuredData": json.dumps(s.extracted_context or {}),
+                "extracted_context": s.extracted_context or {},
                 "completenessScore": s.completeness_score,
+                "completeness_score": s.completeness_score,
                 "reportsCount": reports_count,
                 "createdAt": s.created_at.isoformat(),
+                "created_at": s.created_at.isoformat(),
                 "updatedAt": s.updated_at.isoformat(),
+                "updated_at": s.updated_at.isoformat(),
                 "latestScore": latest_report.overall_score if latest_report else None,
+                "overall_score": latest_report.overall_score if latest_report else None,
+                "classification": latest_report.classification if latest_report else None,
+                "validation_result": val_res_dict,
+                "version": latest_report.version if latest_report else 1,
                 "ideaId": s.idea_id,
+                "idea_id": s.idea_id,
             })
         return results
 
@@ -186,63 +218,84 @@ class ChatService:
         }
 
     def update_extracted_context(self, session: ValidationSession, text: str) -> Tuple[Dict[str, Any], float]:
+        """
+        Finite-State Dialogue Manager:
+        1. Context assembly
+        2. Entity extraction using exact triggers
+        3. State sync (never overwrite collected fields with empty values)
+        4. Completeness audit (readiness = name + problem + solution + target_customer)
+        """
         ctx = dict(session.extracted_context or {})
+        text_lower = text.lower()
 
-        nlp_res = self.nlp_service.extract_attributes(text)
-        entities = nlp_res.get("entities", {})
-
-        # Extract startup name
-        if not ctx.get("startupName"):
-            name_match = re.search(r"(?:named|called|name is|project)\s+([A-Za-z0-9_-]+)", text, re.IGNORECASE)
+        # Step 2: Entity Extraction Triggers
+        # A. Startup Name
+        if not ctx.get("startupName") or not str(ctx["startupName"]).strip():
+            name_match = re.search(r"(?:named|called|name is|project|building)\s+([A-Za-z0-9_-]+(?:\s+[A-Za-z0-9_-]+)?)", text, re.IGNORECASE)
             if name_match:
-                ctx["startupName"] = name_match.group(1).strip()
+                extracted_name = name_match.group(1).strip()
+                if extracted_name.lower() not in ["a", "an", "the", "this", "that"]:
+                    ctx["startupName"] = extracted_name
 
-
-        # Extract problem
-        if not ctx.get("problemStatement"):
-            prob_match = re.search(r"(?:problem|pain point|struggle|issue|challenge)\s+(?:is|with|of)?\s*[:\s]?\s*([^.!?\n]+)", text, re.IGNORECASE)
+        # B. Problem triggers: "problem is", "struggle with"
+        if not ctx.get("problemStatement") or not str(ctx["problemStatement"]).strip():
+            prob_match = re.search(r"(?:problem\s+is|struggle\s+with|pain\s+point\s+is)\s+([^.!?\n]+)", text, re.IGNORECASE)
             if prob_match:
                 ctx["problemStatement"] = prob_match.group(1).strip()
-            elif len(text) > 40 and not ctx.get("proposedSolution"):
+            elif not ctx.get("proposedSolution") and len(text) > 40:
                 ctx["problemStatement"] = text[:180].strip()
 
-        # Extract solution
-        if not ctx.get("proposedSolution"):
-            sol_match = re.search(r"(?:solution|building|platform|app|service|tool|creating|we offer)\s+(?:is|to|a)?\s*[:\s]?\s*([^.!?\n]+)", text, re.IGNORECASE)
+        # C. Solution triggers: "we are building", "building"
+        if not ctx.get("proposedSolution") or not str(ctx["proposedSolution"]).strip():
+            sol_match = re.search(r"(?:we\s+are\s+building|building|we\s+offer|platform\s+to|solution\s+is)\s+([^.!?\n]+)", text, re.IGNORECASE)
             if sol_match:
                 ctx["proposedSolution"] = sol_match.group(1).strip()
 
-        # Extract target customer
-        if not ctx.get("targetCustomer"):
-            cust_match = re.search(r"(?:for|targeting|target customer|audience|users|aimed at)\s+([a-zA-Z0-9\s,]+?)(?:\.|\sand\s|\susing|\sto|\n|$)", text, re.IGNORECASE)
+        # D. Target Customer triggers: "target is", "targeting", "audience", "for students"
+        if not ctx.get("targetCustomer") or not str(ctx["targetCustomer"]).strip():
+            cust_match = re.search(r"(?:target\s+is|targeting|audience(?:\s+is)?|for\s+students|for\s+college\s+students|for)\s+([a-zA-Z0-9\s,-]+?)(?:\.|\n|;|$)", text, re.IGNORECASE)
             if cust_match:
                 candidate = cust_match.group(1).strip()
-                if len(candidate) > 3 and len(candidate) < 60:
+                if len(candidate) > 2 and candidate.lower() not in ["a", "an", "the", "example", "instance"]:
                     ctx["targetCustomer"] = candidate
 
-        # Extract competitors
-        if not ctx.get("competitors"):
-            comp_match = re.search(r"(?:competitors|competing with|alternatives|versus|vs\.?)\s+([a-zA-Z0-9\s,]+?)(?:\.|\n|$)", text, re.IGNORECASE)
-            if comp_match:
-                ctx["competitors"] = comp_match.group(1).strip()
+        # E. Pricing / Revenue triggers: "charge $X/month", "subscription", "freemium", "commission", "fee"
+        if not ctx.get("revenueModel") or not str(ctx["revenueModel"]).strip():
+            charge_match = re.search(r"(?:charge\s+\$?\d+(?:\.\d+)?(?:\s*/\s*month|\s*per\s*month|\s*/\s*mo)?|charge\s+[^.!?\n]+)", text, re.IGNORECASE)
+            if charge_match:
+                ctx["revenueModel"] = charge_match.group(0).strip()
+            else:
+                rev_match = re.search(r"\b(subscription|freemium|commission|fee)\b(?:\s+model|\s+based)?", text, re.IGNORECASE)
+                if rev_match:
+                    ctx["revenueModel"] = rev_match.group(0).capitalize()
 
-        # Extract pricing / revenue
-        if not ctx.get("revenueModel"):
-            rev_match = re.search(r"(?:charge|pricing|subscription|saas|freemium|fee|revenue|monetize)\s+(?:is|at|via)?\s*[:\s]?\s*([^.!?\n]+)", text, re.IGNORECASE)
-            if rev_match:
-                ctx["revenueModel"] = rev_match.group(1).strip()
+        # F. Industry keywords: edtech, fintech, health/healthtech, food delivery/logistics
+        if not ctx.get("industry") or not str(ctx["industry"]).strip():
+            if "edtech" in text_lower or "education" in text_lower:
+                ctx["industry"] = "EdTech"
+            elif "fintech" in text_lower or "finance" in text_lower:
+                ctx["industry"] = "FinTech"
+            elif "health" in text_lower or "healthtech" in text_lower or "medical" in text_lower:
+                ctx["industry"] = "HealthTech"
+            elif "food delivery" in text_lower or "delivery" in text_lower or "courier" in text_lower:
+                ctx["industry"] = "Logistics"
 
-        # Extract industry
-        if not ctx.get("industry") and entities.get("industry"):
-            ctx["industry"] = entities["industry"]
+        # Step 4: Completeness Audit & Readiness Calculation
+        # Readiness = name + problem + solution + target_customer
+        has_name = bool(ctx.get("startupName") or getattr(session, "title", None))
+        has_problem = bool(ctx.get("problemStatement") and str(ctx["problemStatement"]).strip())
+        has_solution = bool(ctx.get("proposedSolution") and str(ctx["proposedSolution"]).strip())
+        has_customer = bool(ctx.get("targetCustomer") and str(ctx["targetCustomer"]).strip())
 
-        # Calculate completeness score
+        is_ready = has_name and has_problem and has_solution and has_customer
+        ctx["is_ready"] = is_ready
+
+        # Score calculation
         score = 0.0
-        if ctx.get("problemStatement"): score += 25.0
-        if ctx.get("proposedSolution"): score += 25.0
-        if ctx.get("targetCustomer"): score += 20.0
-        if ctx.get("industry"): score += 10.0
-        if ctx.get("competitors"): score += 10.0
+        if has_problem: score += 25.0
+        if has_solution: score += 25.0
+        if has_customer: score += 25.0
+        if has_name: score += 15.0
         if ctx.get("revenueModel"): score += 10.0
 
         completeness = min(100.0, score)
@@ -723,10 +776,10 @@ class ChatService:
                 scores = {s.parameter: s.score for s in latest_report.scores}
                 reply = (
                     f"Based on your **Version {latest_report.version} Validation Report**:\n\n"
-                    f"- **Overall Viability:** {latest_report.overall_score}% ({latest_report.classification})\n"
-                    f"- **Market Demand:** {scores.get('market_demand', 'N/A')}/100\n"
-                    f"- **Problem-Solution Fit:** {scores.get('problem_solution_fit', 'N/A')}/100\n"
-                    f"- **Competition:** {scores.get('competition', 'N/A')}/100\n\n"
+                    f"- **Overall Viability:** **{round(latest_report.overall_score)}%** ({(round(latest_report.overall_score / 10.0, 1) if latest_report.overall_score > 10 else round(latest_report.overall_score, 1)):.1f}/10) ({latest_report.classification})\n"
+                    f"- **Market Demand:** {round(float(scores['market_demand']) / 10.0, 1) if 'market_demand' in scores and scores['market_demand'] is not None and float(scores['market_demand']) > 10 else round(float(scores.get('market_demand', 0)), 1):.1f}/10\n"
+                    f"- **Problem-Solution Fit:** {round(float(scores['problem_solution_fit']) / 10.0, 1) if 'problem_solution_fit' in scores and scores['problem_solution_fit'] is not None and float(scores['problem_solution_fit']) > 10 else round(float(scores.get('problem_solution_fit', 0)), 1):.1f}/10\n"
+                    f"- **Competition:** {round(float(scores['competition']) / 10.0, 1) if 'competition' in scores and scores['competition'] is not None and float(scores['competition']) > 10 else round(float(scores.get('competition', 0)), 1):.1f}/10\n\n"
                     f"**Strategic Priority:**\n"
                     f"> {latest_report.recommended_action or 'Conduct customer interviews to test pricing power.'}\n\n"
                     f"You can provide new details about your target market, competitors, or pricing, and click **Recalculate Score** to generate Version {latest_report.version + 1}!"
@@ -913,21 +966,44 @@ class ChatService:
             delta = round(val_result["overall_score"] - prev_report.overall_score, 1)
 
         # Append assistant message of type VALIDATION_COMPLETED
-        scores_map = val_result.get("detailed_scores") or val_result.get("scores", {})
+        # Use aggregated_scores (0-10 scale) for the frontend display.
+        # detailed_scores / scores are the raw 0-100 backend values; aggregated_scores
+        # are already divided by 10 via ScoringService.aggregate_to_7_parameters().
+        scores_map = val_result.get("aggregated_scores") or {}
+        if not scores_map:
+            # Fallback: manually convert detailed_scores from 0-100 → 0-10
+            raw_map = val_result.get("detailed_scores") or val_result.get("scores", {})
+            if isinstance(raw_map, list):
+                raw_map = {s["parameter"]: s["score"] for s in raw_map if isinstance(s, dict) and "parameter" in s}
+            elif not isinstance(raw_map, dict):
+                raw_map = {}
+            scores_map = {k: round(v / 10.0, 1) for k, v in raw_map.items()}
         if isinstance(scores_map, list):
-            scores_map = {s["parameter"]: s["score"] for s in scores_map if isinstance(s, dict) and "parameter" in s}
-        elif not isinstance(scores_map, dict):
+            scores_map = {s["parameter"]: (round(float(s["score"]) / 10.0, 1) if float(s.get("score", 0)) > 10 else round(float(s.get("score", 0)), 1)) for s in scores_map if isinstance(s, dict) and "parameter" in s}
+        elif isinstance(scores_map, dict):
+            scores_map = {k: (round(float(v) / 10.0, 1) if isinstance(v, (int, float)) and float(v) > 10 else (round(float(v), 1) if isinstance(v, (int, float)) else v)) for k, v in scores_map.items()}
+        else:
             scores_map = {}
         labels = {
             "marketDemand": "Market Demand",
-            "problemSeverity": "Problem Severity",
+            "market_demand": "Market Demand",
+            "problemSeverity": "Problem-Solution Fit",
+            "problem_solution_fit": "Problem-Solution Fit",
             "competition": "Competition & Moat",
-            "targetCustomer": "Target Customer",
-            "innovation": "Innovation",
-            "feasibility": "Feasibility",
-            "revenuePotential": "Revenue Potential"
+            "targetCustomer": "Target Customer Clarity",
+            "target_customer_clarity": "Target Customer Clarity",
+            "innovation": "Uniqueness & Innovation",
+            "uniqueness_innovation": "Uniqueness & Innovation",
+            "uniqueness": "Uniqueness & Innovation",
+            "feasibility": "Technical Feasibility",
+            "technical_feasibility": "Technical Feasibility",
+            "revenuePotential": "Business Potential",
+            "business_potential": "Business Potential",
+            "scalability": "Scalability",
+            "risk_level": "Risk Level",
+            "risk": "Risk Level"
         }
-        param_lines = [f"- **{labels.get(k, k)}:** {v}/10" for k, v in scores_map.items()]
+        param_lines = [f"- **{labels.get(k, k.replace('_', ' ').title())}:** {float(v):.1f}/10" for k, v in scores_map.items() if isinstance(v, (int, float))]
         breakdown_text = "\n".join(param_lines)
 
         follow_up_suggs = []

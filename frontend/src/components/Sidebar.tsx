@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
+import { useTheme } from '../hooks/useTheme';
 import { UserAvatar } from './UserAvatar';
 import {
   LayoutDashboard,
@@ -12,6 +12,7 @@ import {
   Settings,
   LogOut,
   Sparkles,
+  Compass,
   Menu,
   X,
   ChevronRight,
@@ -21,7 +22,7 @@ import {
 
 export const Sidebar: React.FC = () => {
   const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  const { isDark, toggle } = useTheme();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -35,19 +36,20 @@ export const Sidebar: React.FC = () => {
     { label: 'Validate Idea', href: '/validate', icon: PlusCircle },
     { label: 'My Ideas', href: '/ideas', icon: FolderKanban },
     { label: 'Compare', href: '/compare', icon: GitCompare },
+    { label: 'Guidelines', href: '/guidelines', icon: Compass },
     { label: 'Profile', href: '/profile', icon: UserIcon },
     { label: 'Settings', href: '/settings', icon: Settings },
   ];
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-white dark:bg-dark-card border-r border-slate-200/90 dark:border-dark-border text-slate-800 dark:text-dark-text transition-colors">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white transition-colors">
       {/* Brand Header */}
-      <div className="p-5 border-b border-slate-100 dark:border-dark-border flex items-center justify-between">
+      <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
         <Link to="/dashboard" className="flex items-center gap-2.5 group">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20 group-hover:scale-105 transition-transform">
             <Sparkles className="w-4 h-4" />
           </div>
-          <span className="text-base font-extrabold tracking-tight text-slate-900 dark:text-dark-text">
+          <span className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white">
             AI <span className="text-indigo-600 dark:text-indigo-400 font-black">Validate</span>
           </span>
         </Link>
@@ -55,11 +57,12 @@ export const Sidebar: React.FC = () => {
         {/* Theme Toggle in Brand Header */}
         <button
           type="button"
-          onClick={toggleTheme}
-          title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:text-dark-muted dark:hover:text-dark-text hover:bg-slate-100 dark:hover:bg-dark-input transition cursor-pointer"
+          onClick={toggle}
+          aria-label="Toggle dark mode"
+          title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
         >
-          {theme === 'dark' ? (
+          {isDark ? (
             <Sun className="w-4 h-4 text-amber-400" />
           ) : (
             <Moon className="w-4 h-4 text-indigo-600" />
@@ -143,10 +146,11 @@ export const Sidebar: React.FC = () => {
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={toggleTheme}
+            onClick={toggle}
+            aria-label="Toggle dark mode"
             className="p-2 rounded-lg text-slate-600 dark:text-dark-muted hover:bg-slate-100 dark:hover:bg-dark-input"
           >
-            {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
+            {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
           </button>
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
