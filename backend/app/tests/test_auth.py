@@ -37,6 +37,23 @@ def test_login_and_me(client):
     assert me_res.json()["data"]["email"] == "login@example.com"
 
 
+def test_tc02_student_login(client):
+    """TC-02: Student founder login with email and password returns valid JWT."""
+    client.post(
+        "/api/v1/auth/register",
+        json={"name": "Collegiate Founder", "email": "student.founder@campus.edu", "password": "StudentPass123!"}
+    )
+    res = client.post(
+        "/api/v1/auth/login",
+        data={"username": "student.founder@campus.edu", "password": "StudentPass123!"}
+    )
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert "access_token" in data
+    assert data["user"]["email"] == "student.founder@campus.edu"
+    assert data["token_type"] == "bearer"
+
+
 def test_login_invalid_password_returns_specific_error(client):
     client.post(
         "/api/v1/auth/register",

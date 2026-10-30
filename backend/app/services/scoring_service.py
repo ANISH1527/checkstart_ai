@@ -382,25 +382,26 @@ class ScoringService:
 
     @classmethod
     def classify_score(cls, score: float, framework: Optional[str] = None) -> str:
-        if framework == "report_v1":
-            return classify_report_v1(score)["code"]
-        # Legacy default
-        if score >= 90.0:
-            return "EXCEPTIONAL"
-        elif score >= 75.0:
-            return "STRONG"
-        elif score >= 60.0:
-            return "MODERATE"
-        elif score >= 40.0:
-            return "WEAK"
-        else:
-            return "VERY_WEAK"
+        fw = framework or DEFAULT_FRAMEWORK
+        if fw == "legacy_v9":
+            if score >= 90.0:
+                return "EXCEPTIONAL"
+            elif score >= 75.0:
+                return "STRONG"
+            elif score >= 60.0:
+                return "MODERATE"
+            elif score >= 40.0:
+                return "WEAK"
+            else:
+                return "VERY_WEAK"
+        return classify_report_v1(score)["code"]
 
     @classmethod
     def classify(cls, score: float, framework: Optional[str] = None) -> Dict[str, str]:
-        if framework == "report_v1":
-            return classify_report_v1(score)
-        return classify_legacy_v9(score)
+        fw = framework or DEFAULT_FRAMEWORK
+        if fw == "legacy_v9":
+            return classify_legacy_v9(score)
+        return classify_report_v1(score)
 
     @staticmethod
     def aggregate_to_7_parameters(extracted_scores: Dict[str, float]) -> Dict[str, float]:
