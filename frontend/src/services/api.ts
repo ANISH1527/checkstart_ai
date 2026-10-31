@@ -30,14 +30,35 @@ function formatNetworkError(err: any): Error {
 
 export async function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
-    return await safeFetch(input, init);
+    return await fetch(input, init);
   } catch (err: any) {
     throw formatNetworkError(err);
   }
 }
 
+function getStorageItem(key: string): string | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem(key);
+    }
+  } catch {
+    // ignore storage access issues
+  }
+  return null;
+}
+
+function removeStorageItem(key: string): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // ignore storage access issues
+  }
+}
+
 function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('ai_validate_token') || localStorage.getItem('auth_token');
+  const token = getStorageItem('ai_validate_token') || getStorageItem('auth_token');
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -60,10 +81,10 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
   if (!response.ok) {
     if (response.status === 401) {
-      localStorage.removeItem('ai_validate_token');
-      localStorage.removeItem('ai_validate_user');
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('auth_user');
+      removeStorageItem('ai_validate_token');
+      removeStorageItem('ai_validate_user');
+      removeStorageItem('auth_token');
+      removeStorageItem('auth_user');
     }
 
     let message = '';
@@ -227,10 +248,10 @@ export const api = {
   },
 
   async logout(): Promise<void> {
-    localStorage.removeItem('ai_validate_token');
-    localStorage.removeItem('ai_validate_user');
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
+    removeStorageItem('ai_validate_token');
+    removeStorageItem('ai_validate_user');
+    removeStorageItem('auth_token');
+    removeStorageItem('auth_user');
   },
 
   // Conversation & Chatbot APIs
