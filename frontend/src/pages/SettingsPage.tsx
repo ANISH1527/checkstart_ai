@@ -27,10 +27,7 @@ import {
   Mail,
   Check,
 } from 'lucide-react';
-
-const GOOGLE_CLIENT_ID =
-  (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ||
-  '659981468656-7rb8trd9vbuijaqncul1lmb46f0iulb6.apps.googleusercontent.com';
+import { GOOGLE_CLIENT_ID } from '../config/auth';
 
 export const SettingsPage: React.FC = () => {
   const { user, logout } = useAuth();

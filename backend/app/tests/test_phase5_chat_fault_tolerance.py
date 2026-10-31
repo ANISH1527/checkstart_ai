@@ -107,14 +107,10 @@ def test_google_auth_signature_enforced_in_non_dev(client):
     try:
         settings.ENVIRONMENT = "production"
 
-        # Request with missing or fake token in production must be rejected with 401
+        # Request with missing or fake token in production must be rejected
         res = client.post(
             "/api/v1/auth/google",
-            json={
-                "email": "student@gmail.com",
-                "googleId": "fake_google_id_123",
-                "name": "Student Founder"
-            }
+            json={"credential": "fake_unverified_token"}
         )
         assert res.status_code == 401
     finally:

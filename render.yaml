@@ -28,6 +28,8 @@ services:
         value: "10080"
       - key: CORS_ORIGINS
         sync: false # Set in Render Dashboard: your Vercel frontend URL, e.g. https://checkstart-ai.vercel.app
+      - key: GOOGLE_CLIENT_ID
+        sync: false # Set in Render Dashboard: your Google OAuth Client ID (e.g. 659981468656-7rb8trd9vbuijaqncul1lmb46f0iulb6.apps.googleusercontent.com)
       - key: CELERY_TASK_ALWAYS_EAGER
         value: "1"
       - key: DATABASE_URL

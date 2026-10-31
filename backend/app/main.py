@@ -12,6 +12,7 @@ from app.database.connection import engine
 # Import API Routers
 from app.api import auth, users, ideas, validation, history, reports, admin
 
+import os
 from contextlib import asynccontextmanager
 from sqlalchemy import text
 import redis
@@ -25,6 +26,9 @@ Base.metadata.create_all(bind=engine)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if os.environ.get("TESTING") == "1":
+        yield
+        return
     logger.info(f"Starting app: ENVIRONMENT={settings.ENVIRONMENT}, LLM_PROVIDER={settings.LLM_PROVIDER}")
 
     db_ok = False
@@ -168,6 +172,7 @@ if not cors_origins_list:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins_list,
+    allow_origin_regex=r"^https://([a-zA-Z0-9_-]+\.)*vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

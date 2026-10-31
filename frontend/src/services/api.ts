@@ -14,8 +14,27 @@ import {
   AdminIdeaItem,
   AdminReportItem,
 } from '../types';
+import { API_BASE_URL } from '../config/auth';
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
+const API_BASE = API_BASE_URL;
+
+function formatNetworkError(err: any): Error {
+  const msg = err?.message || String(err);
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+    return new Error(
+      'Unable to connect to the backend server. Please verify your connection, CORS configuration, and VITE_API_URL.'
+    );
+  }
+  return err instanceof Error ? err : new Error(msg);
+}
+
+export async function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await safeFetch(input, init);
+  } catch (err: any) {
+    throw formatNetworkError(err);
+  }
+}
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('ai_validate_token') || localStorage.getItem('auth_token');
@@ -31,8 +50,10 @@ async function handleResponse<T>(response: Response): Promise<T> {
   }
 
   let data: any = {};
+  let rawText = '';
   try {
-    data = await response.json();
+    rawText = await response.text();
+    data = rawText ? JSON.parse(rawText) : {};
   } catch {
     data = {};
   }
@@ -44,11 +65,52 @@ async function handleResponse<T>(response: Response): Promise<T> {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
     }
-    const message =
-      data.message ||
-      data.detail ||
-      (typeof data.error === 'string' ? data.error : null) ||
-      'An unexpected error occurred. Please try again.';
+
+    let message = '';
+    if (data && typeof data === 'object') {
+      if (typeof data.message === 'string' && data.message.trim()) {
+        message = data.message.trim();
+      } else if (typeof data.detail === 'string' && data.detail.trim()) {
+        message = data.detail.trim();
+      } else if (typeof data.error === 'string' && data.error.trim()) {
+        message = data.error.trim();
+      }
+
+      if (data.details && typeof data.details === 'object' && !message) {
+        const detailsObj = data.details as Record<string, any>;
+        const fieldMsgs = Object.values(detailsObj).filter((v) => typeof v === 'string');
+        if (fieldMsgs.length > 0) {
+          message = fieldMsgs.join('; ');
+        }
+      }
+    }
+
+    if (!message) {
+      if (response.status === 400) {
+        message = 'Invalid request. Please check your information and try again.';
+      } else if (response.status === 401) {
+        message = 'Incorrect email or password. Please try again.';
+      } else if (response.status === 403) {
+        message = 'Access forbidden. You do not have permission to perform this action.';
+      } else if (response.status === 404) {
+        message = 'The requested resource or API endpoint was not found. Please verify VITE_API_URL.';
+      } else if (response.status === 405) {
+        message =
+          'API routing error (HTTP 405 Method Not Allowed). Please ensure VITE_API_URL points to the backend server rather than the frontend host.';
+      } else if (response.status === 422) {
+        message = 'Validation error: please verify that all required fields are correctly formatted.';
+      } else if (response.status === 429) {
+        message = 'Too many requests. Please wait a moment and try again.';
+      } else if (response.status === 502 || response.status === 503) {
+        message =
+          'The backend service is currently spinning up or temporarily unavailable. Please wait 30 seconds and try again.';
+      } else if (response.status >= 500) {
+        message = 'An internal server error occurred on the backend. Please try again later.';
+      } else {
+        message = `Request failed with status code ${response.status}.`;
+      }
+    }
+
     throw new Error(message);
   }
 
@@ -67,7 +129,7 @@ export const api = {
     const url = cleanEndpoint.startsWith('/api')
       ? cleanEndpoint
       : `${API_BASE}${cleanEndpoint}`;
-    const res = await fetch(url, {
+    const res = await safeFetch(url, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -75,7 +137,7 @@ export const api = {
 
   // Sessions API
   async getSessions(): Promise<{ sessions: any[]; conversations: any[]; items: any[] }> {
-    const res = await fetch(`${API_BASE}/sessions`, {
+    const res = await safeFetch(`${API_BASE}/sessions`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -90,7 +152,7 @@ export const api = {
     course?: string;
     graduationYear?: number;
   }): Promise<{ token: string; user: User; message: string }> {
-    const res = await fetch(`${API_BASE}/auth/register`, {
+    const res = await safeFetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -104,7 +166,7 @@ export const api = {
     identifier?: string;
     password: string;
   }): Promise<{ token: string; user: User; message: string }> {
-    const res = await fetch(`${API_BASE}/auth/login`, {
+    const res = await safeFetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -113,16 +175,12 @@ export const api = {
   },
 
   async googleAuth(payload: {
-    email?: string;
-    name?: string;
-    googleId?: string;
-    profileImage?: string;
+    credential: string;
     college?: string;
     course?: string;
     graduationYear?: number;
-    credential?: string;
   }): Promise<{ token: string; user: User; message: string }> {
-    const res = await fetch(`${API_BASE}/auth/google`, {
+    const res = await safeFetch(`${API_BASE}/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -135,7 +193,7 @@ export const api = {
     email?: string;
     password: string;
   }): Promise<{ token: string; user: User; message: string }> {
-    const res = await fetch(`${API_BASE}/auth/admin/login`, {
+    const res = await safeFetch(`${API_BASE}/auth/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -144,14 +202,14 @@ export const api = {
   },
 
   async getMe(): Promise<{ user: User }> {
-    const res = await fetch(`${API_BASE}/auth/me`, {
+    const res = await safeFetch(`${API_BASE}/auth/me`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
 
   async forgotPassword(email: string): Promise<{ message: string; resetLink?: string; devToken?: string }> {
-    const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+    const res = await safeFetch(`${API_BASE}/auth/forgot-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
@@ -160,7 +218,7 @@ export const api = {
   },
 
   async resetPassword(token: string, password: string): Promise<{ message: string }> {
-    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+    const res = await safeFetch(`${API_BASE}/auth/reset-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, password }),
@@ -177,14 +235,14 @@ export const api = {
 
   // Conversation & Chatbot APIs
   async getConversations(): Promise<{ conversations: ValidationConversation[] }> {
-    const res = await fetch(`${API_BASE}/conversations`, {
+    const res = await safeFetch(`${API_BASE}/conversations`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
 
   async createConversation(initialMessage?: string): Promise<{ conversation: ValidationConversation }> {
-    const res = await fetch(`${API_BASE}/conversations`, {
+    const res = await safeFetch(`${API_BASE}/conversations`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ initialMessage }),
@@ -193,7 +251,7 @@ export const api = {
   },
 
   async getConversation(id: string): Promise<{ conversation: ValidationConversation }> {
-    const res = await fetch(`${API_BASE}/conversations/${id}`, {
+    const res = await safeFetch(`${API_BASE}/conversations/${id}`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -208,7 +266,7 @@ export const api = {
     structuredData: StructuredStartupState;
     report?: any;
   }> {
-    const res = await fetch(`${API_BASE}/conversations/${id}/messages`, {
+    const res = await safeFetch(`${API_BASE}/conversations/${id}/messages`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ message }),
@@ -226,7 +284,7 @@ export const api = {
     validationCategory: string;
     message: string;
   }> {
-    const res = await fetch(`${API_BASE}/conversations/${id}/validate`, {
+    const res = await safeFetch(`${API_BASE}/conversations/${id}/validate`, {
       method: 'POST',
       headers: getAuthHeaders(),
     });
@@ -234,7 +292,7 @@ export const api = {
   },
 
   async deleteConversation(id: string): Promise<{ message: string }> {
-    const res = await fetch(`${API_BASE}/conversations/${id}`, {
+    const res = await safeFetch(`${API_BASE}/conversations/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -243,7 +301,7 @@ export const api = {
 
   // Dashboard & Ideas
   async getDashboardStats(): Promise<{ stats: DashboardStats }> {
-    const res = await fetch(`${API_BASE}/ideas/dashboard/stats`, {
+    const res = await safeFetch(`${API_BASE}/ideas/dashboard/stats`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -259,14 +317,14 @@ export const api = {
     if (params?.category) query.set('category', params.category);
     if (params?.sort) query.set('sort', params.sort);
 
-    const res = await fetch(`${API_BASE}/ideas?${query.toString()}`, {
+    const res = await safeFetch(`${API_BASE}/ideas?${query.toString()}`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
 
   async getIdeaById(id: string): Promise<{ idea: StartupIdea }> {
-    const res = await fetch(`${API_BASE}/ideas/${id}`, {
+    const res = await safeFetch(`${API_BASE}/ideas/${id}`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -277,14 +335,14 @@ export const api = {
     totalVersions: number;
     reports: VersionReportItem[];
   }> {
-    const res = await fetch(`${API_BASE}/ideas/${id}/reports`, {
+    const res = await safeFetch(`${API_BASE}/ideas/${id}/reports`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
 
   async createIdea(payload: Partial<StartupIdea>): Promise<{ idea: StartupIdea; message: string }> {
-    const res = await fetch(`${API_BASE}/ideas`, {
+    const res = await safeFetch(`${API_BASE}/ideas`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload),
@@ -293,7 +351,7 @@ export const api = {
   },
 
   async updateIdea(id: string, payload: Partial<StartupIdea>): Promise<{ idea: StartupIdea; message: string }> {
-    const res = await fetch(`${API_BASE}/ideas/${id}`, {
+    const res = await safeFetch(`${API_BASE}/ideas/${id}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload),
@@ -302,7 +360,7 @@ export const api = {
   },
 
   async deleteIdea(id: string): Promise<{ message: string }> {
-    const res = await fetch(`${API_BASE}/ideas/${id}`, {
+    const res = await safeFetch(`${API_BASE}/ideas/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -311,7 +369,7 @@ export const api = {
 
   // AI Validation
   async analyzeIdea(ideaId: string): Promise<{ report: ValidationReport; message: string }> {
-    const res = await fetch(`${API_BASE}/validation/analyze/${ideaId}`, {
+    const res = await safeFetch(`${API_BASE}/validation/analyze/${ideaId}`, {
       method: 'POST',
       headers: getAuthHeaders(),
     });
@@ -319,14 +377,14 @@ export const api = {
   },
 
   async getReport(reportId: string): Promise<{ report: ValidationReport }> {
-    const res = await fetch(`${API_BASE}/validation/${reportId}`, {
+    const res = await safeFetch(`${API_BASE}/validation/${reportId}`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
 
   async toggleRecommendation(ideaId: string | number, recId: string | number): Promise<any> {
-    const res = await fetch(`${API_BASE}/ideas/${ideaId}/recommendations/${recId}/complete`, {
+    const res = await safeFetch(`${API_BASE}/ideas/${ideaId}/recommendations/${recId}/complete`, {
       method: 'POST',
       headers: getAuthHeaders(),
     });
@@ -334,7 +392,7 @@ export const api = {
   },
 
   async compareIdeaVersions(ideaId: string | number, fromVersion: number, toVersion: number): Promise<any> {
-    const res = await fetch(`${API_BASE}/ideas/${ideaId}/compare?from=${fromVersion}&to=${toVersion}`, {
+    const res = await safeFetch(`${API_BASE}/ideas/${ideaId}/compare?from=${fromVersion}&to=${toVersion}`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -342,7 +400,7 @@ export const api = {
 
   // Comparison
   async compareIdeas(ideaIds: string[]): Promise<ComparisonResult> {
-    const res = await fetch(`${API_BASE}/ideas/compare`, {
+    const res = await safeFetch(`${API_BASE}/ideas/compare`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ ideaIds }),
@@ -352,7 +410,7 @@ export const api = {
 
   // Profile & Settings
   async getProfile(): Promise<{ profile: User }> {
-    const res = await fetch(`${API_BASE}/user/profile`, {
+    const res = await safeFetch(`${API_BASE}/user/profile`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -364,7 +422,7 @@ export const api = {
     course?: string | null;
     graduationYear?: number | null;
   }): Promise<{ user: User; message: string }> {
-    const res = await fetch(`${API_BASE}/user/profile`, {
+    const res = await safeFetch(`${API_BASE}/user/profile`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload),
@@ -376,7 +434,7 @@ export const api = {
     currentPassword: string;
     newPassword: string;
   }): Promise<{ message: string }> {
-    const res = await fetch(`${API_BASE}/user/password`, {
+    const res = await safeFetch(`${API_BASE}/user/password`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload),
@@ -389,7 +447,7 @@ export const api = {
     googleEmail?: string;
     credential?: string;
   }): Promise<{ verificationToken: string; message: string }> {
-    const res = await fetch(`${API_BASE}/user/verify-delete`, {
+    const res = await safeFetch(`${API_BASE}/user/verify-delete`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload),
@@ -401,7 +459,7 @@ export const api = {
     confirmText: string;
     verificationToken: string;
   }): Promise<{ message: string }> {
-    const res = await fetch(`${API_BASE}/user/account`, {
+    const res = await safeFetch(`${API_BASE}/user/account`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload),
@@ -410,7 +468,7 @@ export const api = {
   },
 
   async getSettings(): Promise<{ settings: { theme: string; emailNotifications: boolean } }> {
-    const res = await fetch(`${API_BASE}/settings`, {
+    const res = await safeFetch(`${API_BASE}/settings`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -420,7 +478,7 @@ export const api = {
     theme?: string;
     emailNotifications?: boolean;
   }): Promise<{ message: string; settings: { theme: string; emailNotifications: boolean } }> {
-    const res = await fetch(`${API_BASE}/settings`, {
+    const res = await safeFetch(`${API_BASE}/settings`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload),
@@ -431,7 +489,7 @@ export const api = {
 
   // Admin APIs
   async getAdminDashboardStats(): Promise<{ stats: AdminDashboardStats }> {
-    const res = await fetch(`${API_BASE}/admin/dashboard`, {
+    const res = await safeFetch(`${API_BASE}/admin/dashboard`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -447,14 +505,14 @@ export const api = {
     if (params?.provider) query.set('provider', params.provider);
     if (params?.sort) query.set('sort', params.sort);
 
-    const res = await fetch(`${API_BASE}/admin/users?${query.toString()}`, {
+    const res = await safeFetch(`${API_BASE}/admin/users?${query.toString()}`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
 
   async getAdminUserDetails(id: string): Promise<AdminUserDetails> {
-    const res = await fetch(`${API_BASE}/admin/users/${id}`, {
+    const res = await safeFetch(`${API_BASE}/admin/users/${id}`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -470,7 +528,7 @@ export const api = {
     if (params?.category) query.set('category', params.category);
     if (params?.sort) query.set('sort', params.sort);
 
-    const res = await fetch(`${API_BASE}/admin/ideas?${query.toString()}`, {
+    const res = await safeFetch(`${API_BASE}/admin/ideas?${query.toString()}`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -486,7 +544,7 @@ export const api = {
     if (params?.category) query.set('category', params.category);
     if (params?.sort) query.set('sort', params.sort);
 
-    const res = await fetch(`${API_BASE}/admin/reports?${query.toString()}`, {
+    const res = await safeFetch(`${API_BASE}/admin/reports?${query.toString()}`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);

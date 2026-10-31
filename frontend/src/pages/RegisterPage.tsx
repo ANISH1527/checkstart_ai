@@ -23,10 +23,7 @@ import {
   GoogleAccountChooserModal,
   GoogleAccountProfile,
 } from '../components/GoogleAccountChooserModal';
-
-const GOOGLE_CLIENT_ID =
-  (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ||
-  '659981468656-7rb8trd9vbuijaqncul1lmb46f0iulb6.apps.googleusercontent.com';
+import { GOOGLE_CLIENT_ID } from '../config/auth';
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -169,27 +166,45 @@ export const RegisterPage: React.FC = () => {
     };
   }, [theme]);
 
-  // Fallback handler for account chooser
+  // Fallback handler when official GIS button iframe is delayed or blocked
+  const handleGoogleFallbackClick = () => {
+    if (window.google?.accounts?.id) {
+      try {
+        window.google.accounts.id.prompt();
+        return;
+      } catch (e) {
+        console.warn('Google prompt could not be opened:', e);
+      }
+    }
+
+    if ((import.meta as any).env?.DEV) {
+      setGoogleChooserOpen(true);
+      return;
+    }
+
+    setError(
+      'Google Sign-In is initializing or unavailable. If you are using an ad-blocker or strict tracking protection, please allow Google scripts, or register using your email and password.'
+    );
+  };
+
+  // Mock account chooser handler (only available in local development environment)
   const handleMockAccountSelected = async (account: GoogleAccountProfile) => {
     setError(null);
     setGoogleLoading(true);
     setGoogleChooserOpen(false);
 
     try {
-      const avatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(account.email)}`;
       const res = await api.googleAuth({
-        email: account.email,
-        name: account.name,
-        googleId: `google_${Date.now()}`,
-        profileImage: avatarUrl,
-        college: account.college || 'bitsathy.ac.in',
-        course: account.course || 'Computer Science & Engineering',
+        credential: `mock_valid_google_token_${account.email}`,
+        college: college.trim() || account.college || undefined,
+        course: course.trim() || account.course || undefined,
+        graduationYear: graduationYear ? Number(graduationYear) : undefined,
       });
 
       login(res.token, res.user);
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.message || 'Authentication failed. Please try again.');
+      setError(err.message || 'Registration failed. Please try again.');
     } finally {
       setGoogleLoading(false);
     }
@@ -480,7 +495,7 @@ export const RegisterPage: React.FC = () => {
                 {!gisLoaded && (
                   <button
                     type="button"
-                    onClick={() => setGoogleChooserOpen(true)}
+                    onClick={handleGoogleFallbackClick}
                     className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-full border border-slate-300 dark:border-dark-border hover:bg-slate-50 dark:hover:bg-dark-input text-xs sm:text-sm font-bold text-slate-800 dark:text-dark-text shadow-xs transition-all cursor-pointer"
                   >
                     <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">

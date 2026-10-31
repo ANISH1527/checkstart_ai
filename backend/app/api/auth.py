@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -60,6 +61,11 @@ def register(request: Request, user_in: UserRegister, db: Session = Depends(get_
     user_repo = UserRepository(db)
     existing = user_repo.get_by_email(user_in.email)
     if existing:
+        if getattr(existing, "auth_provider", "LOCAL") == "GOOGLE":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This email address is registered via Google Sign-In. Please sign in using Continue with Google."
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email address is already registered."
@@ -126,7 +132,7 @@ async def login(request: Request, db: Session = Depends(get_db)):
     else:
         # Form-data or x-www-form-urlencoded
         form = await request.form()
-        username = form.get("username") or form.get("email")
+        username = form.get("username") or form.get("email") or form.get("identifier")
         password = form.get("password")
 
     if not username or not password:
@@ -137,6 +143,15 @@ async def login(request: Request, db: Session = Depends(get_db)):
 
     user_repo = UserRepository(db)
     user = user_repo.get_by_email_or_name(username.strip())
+
+    # Check if this user registered via Google Sign-In and lacks a password
+    if user and getattr(user, "auth_provider", "LOCAL") == "GOOGLE" and not user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account was created with Google Sign-In. Please sign in using Continue with Google.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     if not user or not user.password_hash or not verify_password(password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -164,49 +179,74 @@ async def login(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/google")
 def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
-    extracted_email = payload.email
-    extracted_sub = payload.googleId
-    extracted_name = payload.name
-    extracted_image = payload.profileImage
+    if not payload.credential or not payload.credential.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google ID token credential is required for authentication."
+        )
 
-    # Decode & verify Google ID Token
-    if getattr(settings, "ENVIRONMENT", "development").lower() != "development":
-        if not payload.credential:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Google ID token signature verification is required in production."
-            )
+    raw_token = payload.credential.strip()
+
+    # In testing mode with a mocked valid token
+    if (
+        os.environ.get("TESTING") == "1"
+        and raw_token.startswith("mock_valid_google_token_")
+    ):
+        mock_email = raw_token[len("mock_valid_google_token_"):].strip()
+        if not mock_email or "@" not in mock_email:
+            mock_email = "test.google.user@example.com"
+        id_info = {
+            "sub": f"google_sub_{mock_email}",
+            "email": mock_email,
+            "name": mock_email.split("@")[0].title(),
+            "picture": "https://lh3.googleusercontent.com/sample",
+            "iss": "https://accounts.google.com"
+        }
+    else:
+        # Full cryptographic verification against Google OAuth2 public certificates
         try:
             from google.oauth2 import id_token
             from google.auth.transport import requests as google_requests
-            id_info = id_token.verify_oauth2_token(
-                payload.credential,
-                google_requests.Request()
+
+            audience = (
+                getattr(settings, "GOOGLE_CLIENT_ID", None)
+                or "659981468656-7rb8trd9vbuijaqncul1lmb46f0iulb6.apps.googleusercontent.com"
             )
-            extracted_email = id_info.get("email")
-            extracted_sub = id_info.get("sub")
-            extracted_name = id_info.get("name") or extracted_name
-            extracted_image = id_info.get("picture") or extracted_image
-        except Exception as e:
+            id_info = id_token.verify_oauth2_token(
+                raw_token,
+                google_requests.Request(),
+                audience=audience
+            )
+        except ValueError as ve:
+            logger.warning(f"Google ID token verification failed: {ve}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Google ID token signature verification failed: {e}"
+                detail=f"Google ID token signature verification failed: {ve}"
             )
-    else:
-        if payload.credential:
-            try:
-                unverified_claims = jwt.get_unverified_claims(payload.credential)
-                extracted_sub = unverified_claims.get("sub") or extracted_sub
-                extracted_email = unverified_claims.get("email") or extracted_email
-                extracted_name = unverified_claims.get("name") or extracted_name
-                extracted_image = unverified_claims.get("picture") or extracted_image
-            except Exception as e:
-                logger.warning(f"Google credential decoding fallback: {e}")
+        except Exception as e:
+            logger.error(f"Google verification network/internal failure: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Google token verification failed. Please try again."
+            )
+
+        # Enforce valid Google issuer
+        issuer = id_info.get("iss")
+        if issuer not in ("accounts.google.com", "https://accounts.google.com"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid Google token issuer: {issuer}"
+            )
+
+    extracted_email = id_info.get("email")
+    extracted_sub = id_info.get("sub")
+    extracted_name = id_info.get("name")
+    extracted_image = id_info.get("picture")
 
     if not extracted_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email could not be determined from Google authentication."
+            detail="Email could not be determined from Google token."
         )
 
     extracted_email = extracted_email.strip().lower()
@@ -234,7 +274,7 @@ def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
         db.refresh(user)
 
         # Profile
-        grad_year = payload.graduationYear
+        grad_year = payload.graduationYear or getattr(payload, "graduation_year", None)
         if payload.college or payload.course or grad_year:
             prof = UserProfile(
                 user_id=user.id,

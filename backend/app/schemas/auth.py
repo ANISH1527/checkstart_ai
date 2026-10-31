@@ -1,21 +1,20 @@
 import re
 from typing import Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
 
 
 class UserRegister(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str
     email: str
     password: str
     college: Optional[str] = None
     course: Optional[str] = None
-    graduationYear: Optional[int] = Field(default=None, alias="graduation_year")
+    graduationYear: Optional[int] = Field(default=None, validation_alias="graduation_year")
     graduation_year: Optional[int] = None
-
-    class Config:
-        populate_by_name = True
 
     @field_validator('email')
     @classmethod
@@ -27,6 +26,8 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     email: Optional[str] = None
     username: Optional[str] = None
     identifier: Optional[str] = None
@@ -34,32 +35,39 @@ class UserLogin(BaseModel):
 
     def get_login_identifier(self) -> str:
         ident = self.email or self.username or self.identifier
-        if not ident:
+        if not ident or not ident.strip():
             raise ValueError("Email or username is required.")
         return ident.strip().lower()
 
 
 class GoogleAuthRequest(BaseModel):
-    credential: Optional[str] = None
-    email: Optional[str] = None
-    name: Optional[str] = None
-    googleId: Optional[str] = Field(default=None, alias="google_id")
-    profileImage: Optional[str] = Field(default=None, alias="profile_image")
+    model_config = ConfigDict(populate_by_name=True)
+
+    credential: str = Field(..., description="Signed Google ID token (JWT) from Google Identity Services")
     college: Optional[str] = None
     course: Optional[str] = None
-    graduationYear: Optional[int] = Field(default=None, alias="graduation_year")
+    graduationYear: Optional[int] = Field(default=None, validation_alias="graduation_year")
+    graduation_year: Optional[int] = None
 
-    class Config:
-        populate_by_name = True
+    @field_validator('credential')
+    @classmethod
+    def validate_credential_non_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Google ID token credential must not be empty.")
+        return v.strip()
 
 
 class AdminLoginRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     username: Optional[str] = None
     email: Optional[str] = None
     password: str
 
 
 class ForgotPasswordRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     email: str
 
     @field_validator('email')
@@ -72,14 +80,20 @@ class ForgotPasswordRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     token: str
     password: str
 
 
 class Token(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     access_token: str
     token_type: str = "bearer"
 
 
 class TokenData(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     user_id: str

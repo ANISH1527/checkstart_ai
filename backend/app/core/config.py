@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     SIMILARITY_MIN_IDEAS_FOR_FLAG: int = 1
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:5174,http://127.0.0.1:5174"
     REDIS_REQUIRED: bool = False
+    GOOGLE_CLIENT_ID: Optional[str] = "659981468656-7rb8trd9vbuijaqncul1lmb46f0iulb6.apps.googleusercontent.com"
 
     @property
     def SECRET_KEY(self) -> str:
